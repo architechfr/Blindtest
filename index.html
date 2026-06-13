@@ -14,11 +14,16 @@
       darkMode: 'class',
       theme: {
         extend: {
-          fontFamily: { display: ['"Baloo 2"', 'system-ui', 'sans-serif'] },
+          fontFamily: {
+            display: ['"Baloo 2"', 'system-ui', 'sans-serif'],
+            chrome: ['"Audiowide"', 'system-ui', 'sans-serif'],
+            tech: ['"Orbitron"', 'system-ui', 'sans-serif']
+          },
           colors: {
             night: '#0b0014',
             grape: '#1a0b2e',
-            neon: { pink: '#ff2e9a', violet: '#8b5cf6', cyan: '#22d3ee', lime: '#a3e635', gold: '#fbbf24' }
+            sunset: '#ff6b3d',
+            neon: { pink: '#ff2e9a', violet: '#8b5cf6', cyan: '#22d3ee', lime: '#a3e635', gold: '#fbbf24', orange: '#ff8a00' }
           },
           keyframes: {
             pop: { '0%': { transform: 'scale(1)' }, '50%': { transform: 'scale(0.92)' }, '100%': { transform: 'scale(1)' } },
@@ -38,7 +43,16 @@
   </script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Audiowide&family=Orbitron:wght@600;800&display=swap" rel="stylesheet" />
+
+  <!-- PWA : installable plein écran sur téléphone -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Blind Test" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
 
   <!-- SDK temps réel + utilitaires (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -46,27 +60,111 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
   <style>
+    :root { --bt-max: 480px; }
+    * { -webkit-tap-highlight-color: transparent; }
     html, body { height: 100%; }
+    html { background: #05000a; }
     body {
-      background:
-        radial-gradient(1200px 600px at 10% -10%, #3b0764 0%, transparent 55%),
-        radial-gradient(1000px 500px at 100% 0%, #831843 0%, transparent 50%),
-        linear-gradient(160deg, #0b0014 0%, #1a0b2e 100%);
-      background-attachment: fixed;
-      -webkit-tap-highlight-color: transparent;
+      margin: 0;
+      min-height: 100dvh;
+      background: #05000a;
       overscroll-behavior: none;
     }
-    .glass { background: rgba(255,255,255,.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.08); }
-    .text-glow { text-shadow: 0 0 24px rgba(255,46,154,.55); }
+
+    /* ====================== DÉCOR SYNTHWAVE (fixe, derrière tout) ====================== */
+    .bt-bg { position: fixed; inset: 0; z-index: -2; overflow: hidden;
+      background: linear-gradient(180deg,
+        #05000a 0%, #0c0530 20%, #2a0a55 38%, #6a1670 52%, #c01f7a 60%,
+        #ff486b 63%, #ff9a3c 65%, #1c0738 65%, #0a0118 100%); }
+    .bt-stars { position: absolute; inset: 0 0 38% 0;
+      background-image:
+        radial-gradient(1px 1px at 20% 30%, #fff, transparent),
+        radial-gradient(1px 1px at 70% 18%, #fff, transparent),
+        radial-gradient(1px 1px at 45% 50%, #ffd9f3, transparent),
+        radial-gradient(1px 1px at 85% 40%, #fff, transparent),
+        radial-gradient(1px 1px at 12% 60%, #cfeeff, transparent),
+        radial-gradient(1px 1px at 60% 65%, #fff, transparent);
+      opacity: .8; }
+    .bt-sun { position: absolute; left: 50%; top: 64%; transform: translate(-50%, -100%);
+      width: min(62vw, 320px); height: min(62vw, 320px); border-radius: 50%;
+      background: linear-gradient(180deg, #fff6b0 0%, #ffd23f 28%, #ff7a3d 55%, #ff2e9a 82%, #b3146e 100%);
+      box-shadow: 0 0 90px 22px rgba(255,90,140,.5), 0 0 160px 40px rgba(255,138,0,.25); }
+    .bt-sun::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: repeating-linear-gradient(180deg, transparent 0 16px, #1c0738 16px 22px);
+      -webkit-mask: linear-gradient(180deg, transparent 46%, #000 46%);
+              mask: linear-gradient(180deg, transparent 46%, #000 46%); }
+    .bt-grid { position: absolute; left: -60%; right: -60%; top: 65%; bottom: -25%;
+      background-image:
+        linear-gradient(to right, rgba(34,211,238,.55) 1.5px, transparent 1.5px),
+        linear-gradient(to bottom, rgba(255,46,154,.5) 1.5px, transparent 1.5px);
+      background-size: 44px 44px;
+      transform: perspective(320px) rotateX(64deg); transform-origin: 50% 0;
+      animation: btgrid 1.6s linear infinite;
+      -webkit-mask: linear-gradient(180deg, #000 0%, transparent 88%);
+              mask: linear-gradient(180deg, #000 0%, transparent 88%); }
+    @keyframes btgrid { from { background-position: 0 0; } to { background-position: 0 44px; } }
+    @media (prefers-reduced-motion: reduce) { .bt-grid { animation: none; } }
+
+    /* Voile scanlines CRT + vignette */
+    .bt-scan { position: fixed; inset: 0; z-index: 60; pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);
+      opacity: .28; }
+    .bt-vignette { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background: radial-gradient(120% 80% at 50% 35%, transparent 55%, rgba(0,0,0,.55) 100%); }
+
+    /* ====================== CADRE "APP MOBILE" ====================== */
+    #app { position: relative; z-index: 1; width: 100%; max-width: var(--bt-max);
+      margin: 0 auto; min-height: 100dvh;
+      padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    @media (min-width: 540px) {
+      #app { min-height: min(900px, 94dvh); margin: 3dvh auto;
+        border-radius: 34px; overflow: hidden;
+        background: rgba(8,2,20,.45); backdrop-filter: blur(3px);
+        box-shadow: 0 0 0 2px rgba(34,211,238,.30), 0 0 0 7px rgba(8,2,20,.6),
+                    0 0 70px rgba(255,46,154,.28), 0 36px 90px rgba(0,0,0,.6); }
+    }
+
+    /* ====================== UTILITAIRES NÉON ====================== */
+    .glass { background: linear-gradient(180deg, rgba(40,12,66,.5), rgba(10,3,26,.62));
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(34,211,238,.22);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 26px rgba(34,211,238,.08); }
+    .text-glow { text-shadow: 0 0 16px rgba(255,46,154,.7), 0 0 38px rgba(255,46,154,.35); }
+    .glow-cyan { text-shadow: 0 0 14px rgba(34,211,238,.75), 0 0 30px rgba(34,211,238,.4); }
+    .bt-logo { font-family: "Audiowide", system-ui, sans-serif; letter-spacing: .04em;
+      background: linear-gradient(180deg, #fff 0%, #ffe7fb 38%, #ff7ad0 62%, #22d3ee 63%, #18a9c7 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 2px 0 rgba(255,46,154,.6)) drop-shadow(0 0 22px rgba(34,211,238,.45)); }
+    .bt-title { font-family: "Orbitron", system-ui, sans-serif; }
+
+    /* Boutons : ressenti tactile + halo néon sur les CTA dégradés */
+    button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; }
+    button:active { transform: translateY(1px) scale(.985); }
+    .btn-glow { box-shadow: 0 0 26px rgba(255,46,154,.45), inset 0 0 0 1px rgba(255,255,255,.12); }
+    .btn-glow-cyan { box-shadow: 0 0 26px rgba(34,211,238,.45), inset 0 0 0 1px rgba(255,255,255,.12); }
+
     ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(34,211,238,.25); border-radius: 8px; }
     input { font-size: 16px; } /* évite le zoom auto iOS */
+
+    /* Confettis (canvas plein écran) */
+    #confetti { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
   </style>
 </head>
 <body class="text-white font-display antialiased">
-  <main id="app" class="min-h-screen w-full flex flex-col"></main>
+  <!-- Décor Synthwave -->
+  <div class="bt-bg" aria-hidden="true">
+    <div class="bt-stars"></div>
+    <div class="bt-sun"></div>
+    <div class="bt-grid"></div>
+  </div>
+  <div class="bt-vignette" aria-hidden="true"></div>
+  <div class="bt-scan" aria-hidden="true"></div>
 
-  <!-- Toasts -->
+  <main id="app" class="w-full flex flex-col"></main>
+
+  <!-- Confettis + Toasts -->
+  <canvas id="confetti" aria-hidden="true"></canvas>
   <div id="toasts" class="fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none"></div>
 
   <script>
@@ -151,6 +249,38 @@
   }
   function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
 
+  /* Confettis plein écran (canvas, sans dépendance) */
+  var _confCv = document.getElementById('confetti');
+  var _confCtx = _confCv && _confCv.getContext('2d');
+  var _conf = [], _confRAF = 0;
+  function confetti(n) {
+    if (!_confCtx) return;
+    var W = _confCv.width = window.innerWidth, H = _confCv.height = window.innerHeight;
+    var colors = ['#ff2e9a', '#22d3ee', '#a3e635', '#fbbf24', '#8b5cf6', '#ff8a00'];
+    for (var i = 0; i < (n || 120); i++) {
+      _conf.push({
+        x: Math.random() * W, y: -20 - Math.random() * H * 0.3,
+        vx: (Math.random() - 0.5) * 6, vy: 3 + Math.random() * 5,
+        s: 5 + Math.random() * 7, r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 0.3,
+        c: colors[(Math.random() * colors.length) | 0]
+      });
+    }
+    if (!_confRAF) _confRAF = requestAnimationFrame(_confStep);
+  }
+  function _confStep() {
+    var W = _confCv.width, H = _confCv.height;
+    _confCtx.clearRect(0, 0, W, H);
+    for (var i = _conf.length - 1; i >= 0; i--) {
+      var p = _conf[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.r += p.vr;
+      _confCtx.save(); _confCtx.translate(p.x, p.y); _confCtx.rotate(p.r);
+      _confCtx.fillStyle = p.c; _confCtx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6); _confCtx.restore();
+      if (p.y > H + 30) _conf.splice(i, 1);
+    }
+    if (_conf.length) _confRAF = requestAnimationFrame(_confStep);
+    else { _confCtx.clearRect(0, 0, W, H); _confRAF = 0; }
+  }
+
   function toast(msg, kind) {
     var c = { ok: 'bg-neon-lime text-black', err: 'bg-rose-500', info: 'bg-neon-violet' }[kind || 'info'];
     var el = document.createElement('div');
@@ -233,11 +363,12 @@
   function renderHome() {
     app.innerHTML = [
       '<div class="flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
-      '  <div class="text-7xl mb-4 animate-float">🎧</div>',
-      '  <h1 class="text-4xl font-extrabold text-center leading-tight text-glow">Blind Test<br><span class="text-neon-pink">Musical</span></h1>',
-      '  <p class="text-white/60 text-center mt-3 mb-8">Buzze, réponds, vote. Le plus rapide gagne. 🏆</p>',
+      '  <div class="text-7xl mb-3 animate-float">📼</div>',
+      '  <h1 class="bt-logo text-5xl sm:text-6xl text-center leading-none">BLIND<br>TEST</h1>',
+      '  <p class="bt-title text-neon-cyan glow-cyan text-center text-sm tracking-[0.45em] mt-3 uppercase">Musical</p>',
+      '  <p class="text-white/55 text-center mt-3 mb-8">Buzze, réponds, vote. Le plus rapide gagne. 🏆</p>',
 
-      '  <button id="goHost" class="w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet shadow-lg active:animate-pop mb-4">',
+      '  <button id="goHost" class="btn-glow w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-4">',
       '    🎤 Créer une partie</button>',
 
       '  <div class="glass rounded-2xl p-5 w-full">',
@@ -412,9 +543,10 @@
         correct: correct, votes: tallyVotes()
       });
       beep(correct ? 880 : 160, 0.3, correct ? 'sine' : 'sawtooth');
+      if (correct) confetti(150);
       publish();
     }
-    function endGame() { state.phase = 'ended'; publish(); }
+    function endGame() { state.phase = 'ended'; confetti(240); publish(); }
     function replay() {
       Object.keys(state.players).forEach(function (id) { state.players[id].score = 0; });
       state.round = 0; state.phase = 'lobby';
@@ -495,8 +627,11 @@
       } else if (s.phase === 'ended') {
         phaseBlock = [
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
-          '  <div class="text-5xl mb-2">🏆</div><p class="text-2xl font-extrabold mb-1">Classement final</p>',
-          '  <div class="grid grid-cols-2 gap-3 mt-5">',
+          '  <div class="text-5xl mb-1">🏆</div>',
+          '  <p class="bt-title text-2xl font-extrabold glow-cyan">CLASSEMENT FINAL</p>',
+          '  <p class="text-white/50 text-sm">' + s.round + ' manche' + (s.round > 1 ? 's' : '') + ' jouée' + (s.round > 1 ? 's' : '') + '</p>',
+               renderPodium(lb),
+          '  <div class="grid grid-cols-2 gap-3 mt-6">',
           '    <button id="export" class="py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">📸 Exporter</button>',
           '    <button id="replay" class="py-3 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">↻ Rejouer</button>',
           '  </div>',
@@ -579,6 +714,8 @@
         if (st.phase === 'buzzing' && lastPhase !== 'buzzing') { beep(740, 0.12, 'sine'); vibrate(40); }
         if (st.phase === 'answering' && st.buzzer && st.buzzer.id === ME && lastPhase !== 'answering') { beep(180, 0.3, 'square'); vibrate([0, 100, 50, 100]); }
         if (st.phase === 'voting' && lastPhase !== 'voting') voted = false;
+        if (st.phase === 'reveal' && st.result && st.result.correct && lastPhase !== 'reveal') confetti(120);
+        if (st.phase === 'ended' && lastPhase !== 'ended') confetti(220);
         if (st.round !== (lastState && lastState.round)) voted = false;
         lastPhase = st.phase;
         lastState = st;
@@ -643,7 +780,14 @@
         var goodForMe = isBuzzer && s.result.correct;
         center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p></div>';
       } else if (s.phase === 'ended') {
-        center = '<div class="w-full text-center animate-slidein"><div class="text-6xl mb-2">🏆</div><p class="text-2xl font-extrabold mb-1">Partie terminée</p><p class="text-white/60">Tu finis ' + (rank ? rank + (rank === 1 ? 'er' : 'e') : '') + ' avec ' + myScore + ' pts</p></div>';
+        center = [
+          '<div class="w-full text-center animate-slidein">',
+          '  <div class="text-6xl mb-1">🏆</div>',
+          '  <p class="bt-title text-2xl font-extrabold glow-cyan">PARTIE TERMINÉE</p>',
+          '  <p class="text-white/60 mt-1">Tu finis ' + (rank ? rank + (rank === 1 ? 'er' : 'e') : '') + ' avec <span class="text-neon-gold font-extrabold">' + myScore + ' pts</span></p>',
+               renderPodium(lb),
+          '</div>'
+        ].join('');
       }
 
       app.innerHTML = [
@@ -689,10 +833,10 @@
   function buzzButton(disabled, label, sub) {
     return [
       '<div class="flex flex-col items-center w-full">',
-      '  <button id="buzz" ' + (disabled ? 'disabled' : '') + ' class="select-none w-64 h-64 rounded-full text-5xl font-extrabold flex items-center justify-center transition ' +
+      '  <button id="buzz" ' + (disabled ? 'disabled' : '') + ' class="bt-title select-none w-60 h-60 sm:w-64 sm:h-64 rounded-full text-4xl font-extrabold flex items-center justify-center border-4 ' +
       (disabled
-        ? 'bg-white/10 text-white/40 cursor-not-allowed'
-        : 'bg-gradient-to-br from-neon-pink to-rose-600 text-white shadow-[0_0_60px_rgba(255,46,154,.6)] animate-ring active:animate-pop') + '">' + esc(label) + '</button>',
+        ? 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed'
+        : 'border-neon-cyan text-white bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_70px_rgba(255,46,154,.7),inset_0_0_44px_rgba(34,211,238,.35)] animate-ring active:animate-pop') + '">' + esc(label) + '</button>',
       '  <p class="mt-6 text-white/60 text-lg">' + esc(sub) + '</p>',
       '</div>'
     ].join('');
@@ -705,20 +849,54 @@
     return Object.keys(players || {}).map(function (k) { return players[k]; })
       .sort(function (a, b) { return b.score - a.score || a.name.localeCompare(b.name); });
   }
+  function avatarGrad(name) {
+    var h = 0, s = String(name || '?');
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    var a = h % 360, b = (a + 55) % 360;
+    return 'linear-gradient(135deg,hsl(' + a + ',85%,60%),hsl(' + b + ',85%,48%))';
+  }
   function renderLeaderboard(lb, present, highlightId) {
     if (!lb.length) return '<p class="text-white/40 text-center py-3">Aucun joueur pour l\'instant…</p>';
     var medals = ['🥇', '🥈', '🥉'];
+    var max = Math.max(1, lb[0] ? lb[0].score : 1);
     return '<div class="space-y-2">' + lb.map(function (p, i) {
       var on = present && present[p.id];
       var hi = highlightId && p.id === highlightId;
+      var pct = p.score > 0 ? Math.max(8, Math.round((p.score / max) * 100)) : 0;
       return [
-        '<div class="flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/30 ring-1 ring-neon-violet' : 'bg-black/20') + '">',
-        '  <div class="w-7 text-center text-lg font-extrabold ' + (i < 3 ? '' : 'text-white/40') + '">' + (medals[i] || (i + 1)) + '</div>',
-        '  <div class="flex-1 font-bold truncate ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + '</div>',
-        '  <div class="font-extrabold text-neon-gold tabular-nums">' + p.score + '</div>',
+        '<div class="flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/25') + '">',
+        '  <div class="w-6 text-center text-lg font-extrabold ' + (i < 3 ? '' : 'text-white/40') + '">' + (medals[i] || (i + 1)) + '</div>',
+        '  <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ' + (on ? '' : 'opacity-40') + '" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</div>',
+        '  <div class="flex-1 min-w-0">',
+        '    <div class="font-bold truncate text-sm ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + '</div>',
+        '    <div class="h-1.5 mt-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="width:' + pct + '%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>',
+        '  </div>',
+        '  <div class="font-extrabold text-neon-gold tabular-nums text-lg">' + p.score + '</div>',
         '</div>'
       ].join('');
     }).join('') + '</div>';
+  }
+
+  /* Podium top 3 (écran de fin). */
+  function renderPodium(lb) {
+    if (!lb.length) return '';
+    var top = lb.slice(0, 3);
+    var heights = ['h-28', 'h-20', 'h-16'];
+    var medals = ['🥇', '🥈', '🥉'];
+    var order = [1, 0, 2]; // 2e à gauche, 1er au centre, 3e à droite
+    var cols = order.filter(function (idx) { return top[idx]; }).map(function (idx) {
+      var p = top[idx];
+      return [
+        '<div class="flex flex-col items-center justify-end gap-1.5 flex-1 min-w-0">',
+        '  <div class="text-2xl h-7">' + (idx === 0 ? '👑' : '') + '</div>',
+        '  <div class="w-11 h-11 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</div>',
+        '  <div class="text-xs font-bold truncate max-w-[5.5rem] text-center w-full">' + esc(p.name) + '</div>',
+        '  <div class="w-full ' + heights[idx] + ' rounded-t-xl flex items-start justify-center pt-2 text-xl ' + (idx === 0 ? 'bg-gradient-to-t from-neon-gold/20 to-neon-gold/70' : 'bg-gradient-to-t from-white/5 to-white/20') + '">' + medals[idx] + '</div>',
+        '  <div class="text-neon-gold font-extrabold tabular-nums">' + p.score + '</div>',
+        '</div>'
+      ].join('');
+    }).join('');
+    return '<div class="flex items-end gap-2 justify-center mt-5 mb-1">' + cols + '</div>';
   }
 
   /* Export du classement final en image (html2canvas). */
@@ -748,6 +926,13 @@
   /* --------------------------------------------------------------------------
      8. Démarrage
      -------------------------------------------------------------------------- */
+  /* PWA : service worker (cache + installable plein écran). */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+
   if (!SB_URL || !window.supabase) {
     app.innerHTML = '<div class="flex-1 flex items-center justify-center p-8 text-center text-white/70">Configuration Supabase manquante.<br>Vérifie assets/js/supabase-config.js</div>';
   } else {

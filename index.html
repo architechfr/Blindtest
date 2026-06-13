@@ -300,6 +300,19 @@
   }
   function vibrate(pattern) { if (prefs && prefs.novib) return; try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
 
+  /* Empêche la mise en veille de l'écran pendant une partie (crucial pour l'hôte). */
+  var _wake = null;
+  function keepAwake() {
+    try {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(function (w) {
+          _wake = w; w.addEventListener('release', function () { _wake = null; });
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') keepAwake(); });
+
   /* Confettis plein écran (canvas, sans dépendance) */
   var _confCv = document.getElementById('confetti');
   var _confCtx = _confCv && _confCv.getContext('2d');
@@ -413,6 +426,7 @@
      3. Vue ACCUEIL
      -------------------------------------------------------------------------- */
   function renderHome() {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
     app.innerHTML = [
       '<div class="relative flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
       '  <button id="gear" class="gear glass flex items-center justify-center text-lg" aria-label="Réglages">⚙️</button>',
@@ -432,11 +446,16 @@
       '      <button id="joinBtn" class="px-5 rounded-xl bg-neon-cyan text-black font-extrabold text-xl active:animate-pop">GO</button>',
       '    </div>',
       '  </div>',
-      '  <p class="text-white/30 text-xs mt-10 text-center">Temps réel via Supabase · AXION</p>',
+      (standalone ? '' : '  <button id="installApp" class="mt-6 w-full py-3 rounded-xl glass font-bold text-sm">📲 Installer l\'app (plein écran)</button>'),
+      '  <p class="text-white/30 text-xs mt-8 text-center">Temps réel via Supabase · AXION</p>',
       '</div>'
     ].join('');
 
     $('#goHost').onclick = function () { location.hash = 'new'; };
+    bind('#installApp', function () {
+      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
+      else toast('Menu du navigateur → « Ajouter à l\'écran d\'accueil » pour le plein écran', 'info');
+    });
     var code = $('#joinCode');
     code.oninput = function () { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
     function join() {
@@ -468,12 +487,23 @@
       '  <input id="partyName" maxlength="30" placeholder="Samedi déglingo"',
       '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
 
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Mode de jeu de départ</p>',
+      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-mode="classic">🔊 Classique</button>',
+      '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="fredonne">🎶 Fredonne</button>',
+      '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="year">📅 Année</button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
+
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Équipes</p>',
+      '  <div class="grid grid-cols-4 gap-2 mb-6">' + [0, 2, 3, 4].map(function (n) { return '<button type="button" class="suTeam py-3 rounded-xl text-sm font-bold ' + (n === 0 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
+
       '  <div class="glass rounded-2xl p-4 mb-8">',
       '    <p class="text-sm font-bold uppercase text-white/60 mb-3">Points</p>',
       '    <div class="grid grid-cols-3 gap-3 text-center">',
       '      <div><div class="text-xs text-white/50 mb-1">Bon buzz</div><input id="pBuzz" type="number" value="3" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '      <div><div class="text-xs text-white/50 mb-1">Bon vote</div><input id="pVote" type="number" value="1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
-      '      <div><div class="text-xs text-white/50 mb-1">Mauvais buzz</div><input id="pWrong" type="number" value="0" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-white/50 mb-1">Mauvais buzz</div><input id="pWrong" type="number" value="-1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '    </div>',
       '  </div>',
 
@@ -482,6 +512,23 @@
     ].join('');
 
     $('#back').onclick = function () { location.hash = ''; };
+
+    var setupMode = 'classic', setupTeams = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('.suMode'), function (b) {
+      b.onclick = function () {
+        setupMode = b.getAttribute('data-mode');
+        Array.prototype.forEach.call(document.querySelectorAll('.suMode'), function (x) { x.className = x.className.replace('bg-neon-violet text-white', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
+      };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.suTeam'), function (b) {
+      b.onclick = function () {
+        setupTeams = parseInt(b.getAttribute('data-teams'), 10) || 0;
+        Array.prototype.forEach.call(document.querySelectorAll('.suTeam'), function (x) { x.className = x.className.replace('bg-neon-cyan text-black', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-cyan text-black');
+      };
+    });
+
     $('#create').onclick = function () {
       var hostName = $('#hostName').value.trim() || 'Hôte';
       var partyName = $('#partyName').value.trim() || 'Blind Test';
@@ -493,7 +540,9 @@
       };
       // On enregistre l'état initial puis on bascule sur la route hôte :
       // route() appellera startHost() (entrée unique, refresh-safe).
-      store.set('hostGame', initialState(genCode(), hostName, partyName, cfg));
+      var st = initialState(genCode(), hostName, partyName, cfg);
+      st.mode = setupMode; st.teams = setupTeams;
+      store.set('hostGame', st);
       location.hash = 'host';
     };
   }
@@ -515,6 +564,7 @@
   function startHost(state) {
     var code = state.code;
     store.set('hostGame', state);
+    keepAwake();
 
     function persist() { store.set('hostGame', state); }
     function publish() { persist(); if (chan) chan.sendState(state); renderHost(); }
@@ -931,7 +981,8 @@
   function startPlayer(code, name) {
     var view = { phase: 'connecting' };
     var lastState = null;
-    var voted = false, guessed = false, lastPhase = null;
+    var voted = false, guessed = false, answered = false, lastPhase = null;
+    keepAwake();
 
     var chan = openChannel(code, { id: ME, name: name, role: 'player' }, {
       onState: function (st) {
@@ -940,6 +991,7 @@
         if (st.phase === 'answering' && st.buzzer && st.buzzer.id === ME && lastPhase !== 'answering') { beep(180, 0.3, 'square'); vibrate([0, 100, 50, 100]); }
         if (st.phase === 'voting' && lastPhase !== 'voting') voted = false;
         if (st.phase === 'year_guess' && lastPhase !== 'year_guess') guessed = false;
+        if (st.phase === 'buzzing' && lastPhase !== 'buzzing') answered = false;
         if (st.phase === 'reveal' && st.result && st.result.correct && lastPhase !== 'reveal') confetti(120);
         if (st.phase === 'year_reveal' && lastPhase !== 'year_reveal' && st.result && (st.result.winners || []).indexOf(ME) >= 0) confetti(140);
         if (st.phase === 'ended' && lastPhase !== 'ended') confetti(220);
@@ -979,7 +1031,9 @@
         if (s.mode === 'fredonne' && isSource) center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-pulse">🎶</div><p class="text-2xl font-extrabold text-neon-lime">FREDONNE !</p><p class="text-white/55 mt-1">Les autres essaient de deviner</p></div>';
         else center = buzzButton(false, 'BUZZ', 'Appuie vite !');
       } else if (s.phase === 'answering') {
-        if (isBuzzer) {
+        if (isBuzzer && answered) {
+          center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">📨</div><p class="text-xl font-bold">Réponse envoyée ✓</p><p class="text-white/50 mt-1">En attente de l\'animateur…</p></div>';
+        } else if (isBuzzer) {
           center = [
             '<div class="w-full animate-slidein text-center">',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
@@ -1071,9 +1125,10 @@
       var ans = $('#ans');
       if (ans) {
         ans.focus();
-        bind('#send', function () { var v = ans.value.trim(); chan.sendIntent({ action: 'answer', id: ME, text: v }); });
-        ans.onkeydown = function (e) { if (e.key === 'Enter') { chan.sendIntent({ action: 'answer', id: ME, text: ans.value.trim() }); } };
-        bind('#oral', function () { chan.sendIntent({ action: 'answer', id: ME, text: '' }); });
+        var sendAnswer = function (txt) { answered = true; chan.sendIntent({ action: 'answer', id: ME, text: txt }); beep(520, 0.1, 'sine'); renderPlayer(); };
+        bind('#send', function () { sendAnswer(ans.value.trim()); });
+        ans.onkeydown = function (e) { if (e.key === 'Enter') sendAnswer(ans.value.trim()); };
+        bind('#oral', function () { sendAnswer(''); });
       }
       bind('#up', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: 1 }); beep(880, 0.08, 'sine'); renderPlayer(); });
       bind('#down', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: -1 }); beep(300, 0.08, 'sine'); renderPlayer(); });

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0014" />
+  <title>🎵 Blind Test — Soirée entre amis</title>
+  <meta name="description" content="Blind Test musical multijoueur en temps réel : buzz, votes et leaderboard live." />
+
+  <!-- Tailwind (CDN, comme le reste d'AXION) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { display: ['"Baloo 2"', 'system-ui', 'sans-serif'] },
+          colors: {
+            night: '#0b0014',
+            grape: '#1a0b2e',
+            neon: { pink: '#ff2e9a', violet: '#8b5cf6', cyan: '#22d3ee', lime: '#a3e635', gold: '#fbbf24' }
+          },
+          keyframes: {
+            pop: { '0%': { transform: 'scale(1)' }, '50%': { transform: 'scale(0.92)' }, '100%': { transform: 'scale(1)' } },
+            float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-8px)' } },
+            ring: { '0%': { boxShadow: '0 0 0 0 rgba(255,46,154,.7)' }, '100%': { boxShadow: '0 0 0 40px rgba(255,46,154,0)' } },
+            slidein: { '0%': { transform: 'translateY(20px)', opacity: 0 }, '100%': { transform: 'translateY(0)', opacity: 1 } }
+          },
+          animation: {
+            pop: 'pop .25s ease',
+            float: 'float 3s ease-in-out infinite',
+            ring: 'ring 1.2s ease-out infinite',
+            slidein: 'slidein .35s ease both'
+          }
+        }
+      }
+    };
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
+
+  <!-- SDK temps réel + utilitaires (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+  <style>
+    html, body { height: 100%; }
+    body {
+      background:
+        radial-gradient(1200px 600px at 10% -10%, #3b0764 0%, transparent 55%),
+        radial-gradient(1000px 500px at 100% 0%, #831843 0%, transparent 50%),
+        linear-gradient(160deg, #0b0014 0%, #1a0b2e 100%);
+      background-attachment: fixed;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+    .glass { background: rgba(255,255,255,.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.08); }
+    .text-glow { text-shadow: 0 0 24px rgba(255,46,154,.55); }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 8px; }
+    input { font-size: 16px; } /* évite le zoom auto iOS */
+  </style>
+</head>
+<body class="text-white font-display antialiased">
+  <main id="app" class="min-h-screen w-full flex flex-col"></main>
+
+  <!-- Toasts -->
+  <div id="toasts" class="fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none"></div>
+
+  <script>
+/* =============================================================================
+   BLIND TEST MUSICAL — Application de soirée multijoueur temps réel
+   -----------------------------------------------------------------------------
+   Stack : HTML + Tailwind (CDN) + Supabase Realtime (Broadcast + Presence).
+   Aucune table SQL, aucune migration : le jeu est éphémère et tient en mémoire.
+
+   Architecture "autorité hôte" :
+     • L'ÉCRAN HÔTE détient l'état complet de la partie (the single source of truth)
+       et le diffuse (broadcast "state") à chaque changement.
+     • Les ÉCRANS JOUEURS sont des clients fins : ils envoient des intentions
+       (broadcast "intent" : join / buzz / answer / vote / leave) et se contentent
+       d'afficher l'état reçu de l'hôte.
+     • La PRÉSENCE Supabase détecte les connexions/déconnexions.
+
+   Dépendances chargées avant (voir blindtest.html) :
+     supabase-js v2, supabase-config.js (window.AXION_SUPABASE), qrcode, html2canvas.
+   ============================================================================= */
+(function () {
+  'use strict';
+
+  /* --------------------------------------------------------------------------
+     0. Constantes & utilitaires
+     -------------------------------------------------------------------------- */
+  /* Credentials Supabase : on réutilise ceux d'AXION si présents (window.AXION_SUPABASE,
+     défini par assets/js/supabase-config.js), sinon on retombe sur les valeurs publiques
+     intégrées ci-dessous. La clé "anon"/"publishable" est PUBLIQUE par conception (elle
+     tourne dans le navigateur). Realtime Broadcast/Presence ne touche à aucune table.
+     => L'app fonctionne donc en autonomie totale (GitHub Pages, Vercel, fichier servi…). */
+  var SB_FALLBACK = { url: 'https://phfdrgvdfhwtyycxpahq.supabase.co', anonKey: 'sb_publishable_GD32kGL-4Et4FEAAOQQrBQ_zClazT3V' };
+  var SB_CONF = window.AXION_SUPABASE || SB_FALLBACK;
+  var SB_URL = SB_CONF.url || SB_FALLBACK.url;
+  var SB_KEY = SB_CONF.anonKey || SB_FALLBACK.anonKey;
+  var BUZZ_LOCK_MS = 3000;          // anti-spam : buzz verrouillé au lancement
+  var CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sans I,O,0,1,L (lisibilité)
+
+  var app = document.getElementById('app');
+  var toasts = document.getElementById('toasts');
+
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function uuid() {
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxxyxxx'.replace(/[xy]/g, function (c) {
+      var r = (Math.random() * 16) | 0, v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+  function genCode() {
+    var s = '';
+    for (var i = 0; i < 6; i++) s += CODE_ALPHABET[(Math.random() * CODE_ALPHABET.length) | 0];
+    return s;
+  }
+  function esc(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function deb(fn, ms) { var t; return function () { var a = arguments, c = this; clearTimeout(t); t = setTimeout(function () { fn.apply(c, a); }, ms); }; }
+  function initials(name) {
+    var parts = String(name || '?').trim().split(/\s+/);
+    return ((parts[0][0] || '?') + (parts[1] ? parts[1][0] : '')).toUpperCase();
+  }
+
+  /* Petit feedback sensoriel : bip WebAudio + vibration. */
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var audioCtx = null;
+  function beep(freq, dur, type) {
+    try {
+      if (!AC) return;
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type || 'sawtooth'; o.frequency.value = freq || 660;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, audioCtx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + (dur || 0.18));
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + (dur || 0.18));
+    } catch (e) { /* audio bloqué, on ignore */ }
+  }
+  function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
+
+  function toast(msg, kind) {
+    var c = { ok: 'bg-neon-lime text-black', err: 'bg-rose-500', info: 'bg-neon-violet' }[kind || 'info'];
+    var el = document.createElement('div');
+    el.className = 'pointer-events-auto px-4 py-2 rounded-full font-bold shadow-lg animate-slidein ' + c;
+    el.textContent = msg;
+    toasts.appendChild(el);
+    setTimeout(function () { el.style.transition = 'opacity .4s'; el.style.opacity = '0'; setTimeout(function () { el.remove(); }, 400); }, 2600);
+  }
+
+  /* Stockage local (pseudo + identité client + reprise de partie hôte) */
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem('bt.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem('bt.' + k, JSON.stringify(v)); } catch (e) {} },
+    del: function (k) { try { localStorage.removeItem('bt.' + k); } catch (e) {} }
+  };
+
+  var ME = store.get('clientId', null);
+  if (!ME) { ME = uuid(); store.set('clientId', ME); }
+
+  /* --------------------------------------------------------------------------
+     1. Couche temps réel (Supabase Realtime)
+     -------------------------------------------------------------------------- */
+  var supa = null;
+  function client() {
+    if (supa) return supa;
+    if (!window.supabase || !SB_URL) throw new Error('SDK Supabase indisponible');
+    supa = window.supabase.createClient(SB_URL, SB_KEY, { realtime: { params: { eventsPerSecond: 20 } } });
+    return supa;
+  }
+
+  /* Ouvre un canal de partie. handlers = { onIntent, onState, onPresence, onReady } */
+  function openChannel(code, identity, handlers) {
+    var ch = client().channel('blindtest-' + code, {
+      config: { broadcast: { self: false }, presence: { key: identity.id } }
+    });
+    if (handlers.onIntent) ch.on('broadcast', { event: 'intent' }, function (m) { handlers.onIntent(m.payload); });
+    if (handlers.onState) ch.on('broadcast', { event: 'state' }, function (m) { handlers.onState(m.payload); });
+    if (handlers.onPresence) {
+      ch.on('presence', { event: 'sync' }, function () { handlers.onPresence(ch.presenceState()); });
+      ch.on('presence', { event: 'leave' }, function (e) { handlers.onPresence(ch.presenceState(), e); });
+    }
+    ch.subscribe(function (status) {
+      if (status === 'SUBSCRIBED') {
+        ch.track({ id: identity.id, name: identity.name, role: identity.role, at: Date.now() });
+        if (handlers.onReady) handlers.onReady(ch);
+      }
+    });
+    return {
+      raw: ch,
+      sendIntent: function (payload) { ch.send({ type: 'broadcast', event: 'intent', payload: payload }); },
+      sendState: function (payload) { ch.send({ type: 'broadcast', event: 'state', payload: payload }); },
+      close: function () { try { client().removeChannel(ch); } catch (e) {} }
+    };
+  }
+
+  /* --------------------------------------------------------------------------
+     2. Routeur de vues minimal (basé sur le hash)
+     -------------------------------------------------------------------------- */
+  var current = null; // contrôleur actif (host/player) pour nettoyage
+  function teardown() { if (current && current.destroy) { try { current.destroy(); } catch (e) {} } current = null; }
+
+  function route() {
+    teardown();
+    var h = location.hash.slice(1);
+    var m = h.match(/^join=([A-Z0-9]{6})$/i);
+    if (h === 'new') return renderHostSetup();          // créer une nouvelle partie
+    if (h === 'host') {                                  // partie hôte en cours
+      var saved = store.get('hostGame', null);
+      if (saved && saved.code) return startHost(saved);
+      return renderHostSetup();
+    }
+    if (m) return renderJoin(m[1].toUpperCase());
+    return renderHome();
+  }
+  window.addEventListener('hashchange', route);
+
+  /* --------------------------------------------------------------------------
+     3. Vue ACCUEIL
+     -------------------------------------------------------------------------- */
+  function renderHome() {
+    app.innerHTML = [
+      '<div class="flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
+      '  <div class="text-7xl mb-4 animate-float">🎧</div>',
+      '  <h1 class="text-4xl font-extrabold text-center leading-tight text-glow">Blind Test<br><span class="text-neon-pink">Musical</span></h1>',
+      '  <p class="text-white/60 text-center mt-3 mb-8">Buzze, réponds, vote. Le plus rapide gagne. 🏆</p>',
+
+      '  <button id="goHost" class="w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet shadow-lg active:animate-pop mb-4">',
+      '    🎤 Créer une partie</button>',
+
+      '  <div class="glass rounded-2xl p-5 w-full">',
+      '    <label class="block text-sm text-white/60 mb-2 font-bold uppercase tracking-wide">Rejoindre avec un code</label>',
+      '    <div class="flex gap-2">',
+      '      <input id="joinCode" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="ABC123"',
+      '        class="flex-1 bg-black/40 rounded-xl px-4 py-4 text-2xl font-extrabold tracking-[0.3em] text-center uppercase outline-none focus:ring-2 ring-neon-cyan" />',
+      '      <button id="joinBtn" class="px-5 rounded-xl bg-neon-cyan text-black font-extrabold text-xl active:animate-pop">GO</button>',
+      '    </div>',
+      '  </div>',
+      '  <p class="text-white/30 text-xs mt-10 text-center">Temps réel via Supabase · AXION</p>',
+      '</div>'
+    ].join('');
+
+    $('#goHost').onclick = function () { location.hash = 'new'; };
+    var code = $('#joinCode');
+    code.oninput = function () { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+    function join() {
+      var v = code.value.trim().toUpperCase();
+      if (v.length !== 6) { toast('Code à 6 caractères', 'err'); vibrate(80); return; }
+      location.hash = 'join=' + v;
+    }
+    $('#joinBtn').onclick = join;
+    code.onkeydown = function (e) { if (e.key === 'Enter') join(); };
+  }
+
+  /* --------------------------------------------------------------------------
+     4. Vue CONFIGURATION HÔTE (avant création)
+     -------------------------------------------------------------------------- */
+  function renderHostSetup() {
+    var lastHost = store.get('hostName', '');
+    app.innerHTML = [
+      '<div class="flex-1 flex flex-col px-6 py-8 max-w-md mx-auto w-full">',
+      '  <button id="back" class="text-white/50 text-left mb-6">← Retour</button>',
+      '  <h2 class="text-3xl font-extrabold mb-1">Nouvelle soirée 🎉</h2>',
+      '  <p class="text-white/50 mb-8">Tu seras l\'animateur : tu lances les morceaux et valides les réponses.</p>',
+
+      '  <label class="block text-sm text-white/60 mb-2 font-bold uppercase">Ton pseudo</label>',
+      '  <input id="hostName" maxlength="20" value="' + esc(lastHost) + '" placeholder="DJ Kevin"',
+      '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-5" />',
+
+      '  <label class="block text-sm text-white/60 mb-2 font-bold uppercase">Nom de la soirée</label>',
+      '  <input id="partyName" maxlength="30" placeholder="Samedi déglingo"',
+      '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
+
+      '  <div class="glass rounded-2xl p-4 mb-8">',
+      '    <p class="text-sm font-bold uppercase text-white/60 mb-3">Points</p>',
+      '    <div class="grid grid-cols-3 gap-3 text-center">',
+      '      <div><div class="text-xs text-white/50 mb-1">Bon buzz</div><input id="pBuzz" type="number" value="3" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-white/50 mb-1">Bon vote</div><input id="pVote" type="number" value="1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-white/50 mb-1">Mauvais buzz</div><input id="pWrong" type="number" value="0" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '    </div>',
+      '  </div>',
+
+      '  <button id="create" class="w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet shadow-lg active:animate-pop">Lancer la partie 🚀</button>',
+      '</div>'
+    ].join('');
+
+    $('#back').onclick = function () { location.hash = ''; };
+    $('#create').onclick = function () {
+      var hostName = $('#hostName').value.trim() || 'Hôte';
+      var partyName = $('#partyName').value.trim() || 'Blind Test';
+      store.set('hostName', hostName);
+      var cfg = {
+        pointsBuzz: parseInt($('#pBuzz').value, 10) || 0,
+        pointsVote: parseInt($('#pVote').value, 10) || 0,
+        pointsWrong: parseInt($('#pWrong').value, 10) || 0
+      };
+      // On enregistre l'état initial puis on bascule sur la route hôte :
+      // route() appellera startHost() (entrée unique, refresh-safe).
+      store.set('hostGame', initialState(genCode(), hostName, partyName, cfg));
+      location.hash = 'host';
+    };
+  }
+
+  function initialState(code, hostName, partyName, cfg) {
+    return {
+      code: code, hostName: hostName, partyName: partyName, config: cfg,
+      round: 0, phase: 'lobby',
+      buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
+      players: {},   // id -> { id, name, score }
+      history: []    // { round, buzzer, answer, correct, votes }
+    };
+  }
+
+  /* --------------------------------------------------------------------------
+     5. CONTRÔLEUR HÔTE (autorité de la partie)
+     -------------------------------------------------------------------------- */
+  function startHost(state) {
+    var code = state.code;
+    store.set('hostGame', state);
+
+    function persist() { store.set('hostGame', state); }
+    function publish() { persist(); if (chan) chan.sendState(state); renderHost(); }
+
+    function ensurePlayer(id, name) {
+      if (!state.players[id]) state.players[id] = { id: id, name: name || 'Joueur', score: 0 };
+      else if (name) state.players[id].name = name;
+      return state.players[id];
+    }
+
+    /* Réception des intentions joueurs */
+    function onIntent(p) {
+      if (!p || !p.id) return;
+      if (p.action === 'join') {
+        ensurePlayer(p.id, p.name);
+        beep(880, 0.08, 'sine');
+        publish();
+      } else if (p.action === 'buzz') {
+        // Premier buzz reçu pendant la phase "buzzing" gagne.
+        if (state.phase === 'buzzing' && !state.buzzer) {
+          var pl = ensurePlayer(p.id, p.name);
+          state.buzzer = { id: pl.id, name: pl.name };
+          state.phase = 'answering';
+          beep(180, 0.35, 'square'); vibrate([0, 120, 60, 120]);
+          publish();
+        }
+      } else if (p.action === 'answer') {
+        if (state.phase === 'answering' && state.buzzer && state.buzzer.id === p.id) {
+          state.answer = String(p.text || '').slice(0, 120);
+          state.phase = 'voting';
+          beep(520, 0.12, 'sine');
+          publish();
+        }
+      } else if (p.action === 'vote') {
+        if (state.phase === 'voting' && state.buzzer && state.buzzer.id !== p.id) {
+          state.votes[p.id] = p.value === 1 ? 1 : -1;
+          publish();
+        }
+      } else if (p.action === 'leave') {
+        // On garde le score (reconnexion possible) mais on peut nettoyer le lobby.
+        publish();
+      }
+    }
+
+    var chan = openChannel(code, { id: ME, name: state.hostName, role: 'host' }, {
+      onIntent: onIntent,
+      onReady: function () { publish(); },
+      onPresence: function (st) {
+        // Marque présents / absents pour l'affichage hôte (scores conservés).
+        var present = {};
+        Object.keys(st).forEach(function (k) { (st[k] || []).forEach(function (m) { present[m.id] = true; }); });
+        state._present = present;
+        renderHost();
+      }
+    });
+
+    /* Actions hôte (machine à états) */
+    function launchRound() {
+      state.round += 1;
+      state.phase = 'armed';
+      state.buzzer = null; state.answer = null; state.votes = {}; state.result = null;
+      state.buzzAt = Date.now() + BUZZ_LOCK_MS;
+      publish();
+      setTimeout(function () {
+        if (state.phase === 'armed') { state.phase = 'buzzing'; beep(740, 0.12, 'sine'); publish(); }
+      }, BUZZ_LOCK_MS);
+    }
+    function validate(correct) {
+      if (!state.buzzer) return;
+      var b = state.players[state.buzzer.id];
+      if (b) b.score += correct ? state.config.pointsBuzz : state.config.pointsWrong;
+      // Récompense les votes justes : 👍 si correct, 👎 si incorrect.
+      Object.keys(state.votes).forEach(function (vid) {
+        var agreed = (state.votes[vid] === 1) === correct;
+        if (agreed && state.players[vid]) state.players[vid].score += state.config.pointsVote;
+      });
+      state.result = { correct: correct };
+      state.phase = 'reveal';
+      state.history.push({
+        round: state.round, buzzer: state.buzzer, answer: state.answer,
+        correct: correct, votes: tallyVotes()
+      });
+      beep(correct ? 880 : 160, 0.3, correct ? 'sine' : 'sawtooth');
+      publish();
+    }
+    function endGame() { state.phase = 'ended'; publish(); }
+    function replay() {
+      Object.keys(state.players).forEach(function (id) { state.players[id].score = 0; });
+      state.round = 0; state.phase = 'lobby';
+      state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.history = [];
+      publish();
+    }
+    function tallyVotes() {
+      var up = 0, down = 0;
+      Object.keys(state.votes).forEach(function (k) { state.votes[k] === 1 ? up++ : down++; });
+      return { up: up, down: down };
+    }
+
+    current = {
+      destroy: function () { if (chan) chan.close(); }
+    };
+
+    /* --- Rendu de l'écran hôte --- */
+    function renderHost() {
+      var s = state;
+      var origin = location.origin + location.pathname;
+      var joinUrl = origin + '#join=' + s.code;
+      var lb = leaderboardArr(s.players);
+      var present = s._present || {};
+
+      var phaseBlock = '';
+      if (s.phase === 'lobby') {
+        var nb = lb.length;
+        var chips = nb
+          ? '<div class="flex flex-wrap justify-center gap-2 mt-1">' + lb.map(function (p) {
+              var on = present[p.id];
+              return '<span class="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold animate-slidein ' + (on ? 'bg-neon-violet/30 ring-1 ring-neon-violet' : 'bg-black/30 text-white/50') + '">' +
+                '<span class="w-6 h-6 rounded-full flex items-center justify-center text-xs ' + (on ? 'bg-neon-cyan text-black' : 'bg-white/10') + '">' + esc(initials(p.name)) + '</span>' +
+                esc(p.name) + (on ? '' : ' 💤') + '</span>';
+            }).join('') + '</div>'
+          : '<p class="text-white/40 text-sm mt-2">En attente des joueurs… scanne le QR pour rejoindre 📲</p>';
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-5 text-center animate-slidein">',
+          '  <p class="text-white/60 mb-3">Partage ce code / QR pour rejoindre</p>',
+          '  <div class="text-5xl font-extrabold tracking-[0.4em] text-neon-cyan mb-4">' + esc(s.code) + '</div>',
+          '  <canvas id="qr" class="mx-auto rounded-xl bg-white p-2"></canvas>',
+          '  <button id="copyLink" class="mt-4 text-sm text-white/60 underline">Copier le lien d\'invitation</button>',
+          '  <div class="mt-6 flex items-center justify-center gap-2 text-white/80 font-bold"><span class="text-2xl">👥</span> ' + nb + ' joueur' + (nb > 1 ? 's' : '') + ' dans le salon</div>',
+             chips,
+          '  <button id="launch" class="mt-6 w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop ' + (nb ? '' : 'opacity-50 pointer-events-none') + '">Lancer la manche 1 🎵</button>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'armed') {
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">Buzz verrouillé…</p><p class="text-white/50">Lance le morceau maintenant !</p></div>';
+      } else if (s.phase === 'buzzing') {
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">🔔</div><p class="text-2xl font-extrabold text-neon-lime">BUZZ OUVERT</p><p class="text-white/50">En attente du premier buzz…</p></div>';
+      } else if (s.phase === 'answering') {
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><p class="text-white/50 uppercase text-sm mb-1">A buzzé en premier</p><div class="text-4xl font-extrabold text-neon-pink text-glow mb-2">' + esc(s.buzzer.name) + '</div><p class="text-white/60">Il/elle écrit sa réponse…</p><button id="forceVote" class="mt-4 text-sm text-white/50 underline">Réponse orale → passer au vote</button></div>';
+      } else if (s.phase === 'voting') {
+        var t = tallyVotes();
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+          '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + '</p>',
+          '  <div class="text-3xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-xl">(réponse orale)</span>') + '</div>',
+          '  <div class="flex justify-center gap-6 text-xl my-4"><span>👍 ' + t.up + '</span><span>👎 ' + t.down + '</span></div>',
+          '  <div class="grid grid-cols-2 gap-3">',
+          '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
+          '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
+          '  </div>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'reveal') {
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-8 text-center animate-slidein">',
+          '  <div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div>',
+          '  <p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
+          '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + (s.result.correct ? ' +' + s.config.pointsBuzz : ' ' + (s.config.pointsWrong >= 0 ? '+' : '') + s.config.pointsWrong) + ' pts</p>',
+          '  <div class="grid grid-cols-2 gap-3 mt-6">',
+          '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
+          '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
+          '  </div>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'ended') {
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+          '  <div class="text-5xl mb-2">🏆</div><p class="text-2xl font-extrabold mb-1">Classement final</p>',
+          '  <div class="grid grid-cols-2 gap-3 mt-5">',
+          '    <button id="export" class="py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">📸 Exporter</button>',
+          '    <button id="replay" class="py-3 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">↻ Rejouer</button>',
+          '  </div>',
+          '</div>'
+        ].join('');
+      }
+
+      app.innerHTML = [
+        '<div class="flex-1 flex flex-col px-5 py-6 max-w-lg mx-auto w-full">',
+        '  <div class="flex items-center justify-between mb-4">',
+        '    <div><div class="text-xs text-white/40 uppercase tracking-wide">Hôte · ' + esc(s.hostName) + '</div><div class="text-xl font-extrabold">' + esc(s.partyName) + '</div></div>',
+        '    <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
+        '  </div>',
+        '  <div class="mb-5">' + phaseBlock + '</div>',
+        '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
+        '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/40">' + esc(s.partyName) + '</span></div>',
+             renderLeaderboard(lb, present),
+        '  </div>',
+        '  <button id="quit" class="mt-4 text-white/40 text-sm">Quitter la partie</button>',
+        '</div>'
+      ].join('');
+
+      // QR code
+      if (s.phase === 'lobby' && window.QRCode) {
+        QRCode.toCanvas($('#qr'), joinUrl, { width: 180, margin: 1, color: { dark: '#0b0014', light: '#ffffff' } }, function () {});
+        var copy = $('#copyLink');
+        if (copy) copy.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(joinUrl); toast('Lien copié !', 'ok'); };
+        var l = $('#launch'); if (l) l.onclick = function () { if (Object.keys(s.players).length) launchRound(); else toast('Aucun joueur connecté', 'err'); };
+      }
+      bind('#forceVote', function () { s.phase = 'voting'; s.answer = null; publish(); });
+      bind('#ok', function () { validate(true); });
+      bind('#ko', function () { validate(false); });
+      bind('#next', launchRound);
+      bind('#end', endGame);
+      bind('#replay', replay);
+      bind('#export', function () { exportLeaderboard(s); });
+      bind('#quit', function () { if (confirm('Quitter et supprimer la partie ?')) { store.del('hostGame'); teardown(); location.hash = ''; } });
+    }
+
+    renderHost();
+  }
+
+  /* --------------------------------------------------------------------------
+     6. Vue JOIN (pseudo) puis CONTRÔLEUR JOUEUR
+     -------------------------------------------------------------------------- */
+  function renderJoin(code) {
+    var lastName = store.get('playerName', '');
+    app.innerHTML = [
+      '<div class="flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
+      '  <div class="text-6xl mb-3 animate-float">🎤</div>',
+      '  <p class="text-white/60">Tu rejoins la partie</p>',
+      '  <div class="text-4xl font-extrabold tracking-[0.3em] text-neon-cyan my-3">' + esc(code) + '</div>',
+      '  <label class="block text-sm text-white/60 mb-2 mt-6 font-bold uppercase self-start">Ton pseudo</label>',
+      '  <input id="pname" maxlength="20" value="' + esc(lastName) + '" placeholder="Ton prénom"',
+      '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-6" />',
+      '  <button id="enter" class="w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-cyan to-neon-lime text-black active:animate-pop">Entrer 🎉</button>',
+      '  <button id="back" class="mt-5 text-white/40 text-sm">← Annuler</button>',
+      '</div>'
+    ].join('');
+    $('#back').onclick = function () { location.hash = ''; };
+    function enter() {
+      var name = $('#pname').value.trim();
+      if (!name) { toast('Choisis un pseudo', 'err'); vibrate(80); return; }
+      store.set('playerName', name);
+      beep(660, 0.1, 'sine'); // débloque l'audio iOS via interaction
+      startPlayer(code, name);
+    }
+    $('#enter').onclick = enter;
+    $('#pname').onkeydown = function (e) { if (e.key === 'Enter') enter(); };
+  }
+
+  function startPlayer(code, name) {
+    var view = { phase: 'connecting' };
+    var lastState = null;
+    var voted = false, lastPhase = null;
+
+    var chan = openChannel(code, { id: ME, name: name, role: 'player' }, {
+      onState: function (st) {
+        // Détecte les transitions pour le feedback sensoriel.
+        if (st.phase === 'buzzing' && lastPhase !== 'buzzing') { beep(740, 0.12, 'sine'); vibrate(40); }
+        if (st.phase === 'answering' && st.buzzer && st.buzzer.id === ME && lastPhase !== 'answering') { beep(180, 0.3, 'square'); vibrate([0, 100, 50, 100]); }
+        if (st.phase === 'voting' && lastPhase !== 'voting') voted = false;
+        if (st.round !== (lastState && lastState.round)) voted = false;
+        lastPhase = st.phase;
+        lastState = st;
+        renderPlayer();
+      },
+      onReady: function () { chan.sendIntent({ action: 'join', id: ME, name: name }); renderPlayer(); }
+    });
+
+    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); } };
+
+    function me() { return lastState && lastState.players ? lastState.players[ME] : null; }
+
+    function renderPlayer() {
+      var s = lastState;
+      if (!s) {
+        app.innerHTML = '<div class="flex-1 flex flex-col items-center justify-center px-6 text-center"><div class="text-5xl mb-4 animate-pulse">📡</div><p class="text-white/70">Connexion à la partie…</p><button id="back" class="mt-8 text-white/40 text-sm">← Quitter</button></div>';
+        bind('#back', function () { location.hash = ''; });
+        return;
+      }
+      var mine = me();
+      var myScore = mine ? mine.score : 0;
+      var lb = leaderboardArr(s.players);
+      var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
+      var isBuzzer = s.buzzer && s.buzzer.id === ME;
+
+      var center = '';
+      if (s.phase === 'lobby') {
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-float">🍿</div><p class="text-xl font-bold">En attente du lancement…</p><p class="text-white/50 mt-1">L\'hôte va démarrer la manche 1</p></div>';
+      } else if (s.phase === 'armed') {
+        center = buzzButton(true, '⏳', 'Prépare-toi…');
+      } else if (s.phase === 'buzzing') {
+        center = buzzButton(false, 'BUZZ', 'Appuie vite !');
+      } else if (s.phase === 'answering') {
+        if (isBuzzer) {
+          center = [
+            '<div class="w-full animate-slidein text-center">',
+            '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
+            '  <p class="text-white/60 mb-4">Écris ta réponse</p>',
+            '  <input id="ans" maxlength="120" placeholder="Titre / artiste…" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />',
+            '  <button id="send" class="w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider ma réponse</button>',
+            '  <button id="oral" class="mt-3 text-white/40 text-sm">Je réponds à l\'oral</button>',
+            '</div>'
+          ].join('');
+        } else {
+          center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">🙊</div><p class="text-xl font-bold"><span class="text-neon-pink">' + esc(s.buzzer.name) + '</span> a buzzé !</p><p class="text-white/50 mt-1">Réponse en cours…</p></div>';
+        }
+      } else if (s.phase === 'voting') {
+        if (isBuzzer) {
+          center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">⏳</div><p class="text-xl font-bold">En attente du vote…</p></div>';
+        } else {
+          center = [
+            '<div class="w-full text-center animate-slidein">',
+            '  <p class="text-white/60 mb-1">Réponse de ' + esc(s.buzzer.name) + '</p>',
+            '  <div class="text-2xl font-extrabold mb-5">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-lg">(à l\'oral)</span>') + '</div>',
+            voted
+              ? '<p class="text-neon-cyan font-bold">Vote enregistré ✓</p>'
+              : '<div class="grid grid-cols-2 gap-4"><button id="up" class="py-8 rounded-2xl bg-neon-lime text-black text-4xl font-extrabold active:animate-pop">👍</button><button id="down" class="py-8 rounded-2xl bg-rose-500 text-4xl font-extrabold active:animate-pop">👎</button></div>',
+            '</div>'
+          ].join('');
+        }
+      } else if (s.phase === 'reveal') {
+        var goodForMe = isBuzzer && s.result.correct;
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p></div>';
+      } else if (s.phase === 'ended') {
+        center = '<div class="w-full text-center animate-slidein"><div class="text-6xl mb-2">🏆</div><p class="text-2xl font-extrabold mb-1">Partie terminée</p><p class="text-white/60">Tu finis ' + (rank ? rank + (rank === 1 ? 'er' : 'e') : '') + ' avec ' + myScore + ' pts</p></div>';
+      }
+
+      app.innerHTML = [
+        '<div class="flex-1 flex flex-col px-5 py-5 max-w-md mx-auto w-full">',
+        '  <div class="flex items-center justify-between mb-2">',
+        '    <div class="text-sm"><span class="text-white/40">Manche</span> <span class="font-extrabold text-neon-cyan">' + (s.round || '–') + '</span></div>',
+        '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
+        '  </div>',
+        '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
+        '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME) + '</div>',
+        '  <button id="leave" class="mt-3 text-white/40 text-sm">Quitter</button>',
+        '</div>'
+      ].join('');
+
+      // Liaisons d'événements
+      bind('#leave', function () { location.hash = ''; });
+      var ans = $('#ans');
+      if (ans) {
+        ans.focus();
+        bind('#send', function () { var v = ans.value.trim(); chan.sendIntent({ action: 'answer', id: ME, text: v }); });
+        ans.onkeydown = function (e) { if (e.key === 'Enter') { chan.sendIntent({ action: 'answer', id: ME, text: ans.value.trim() }); } };
+        bind('#oral', function () { chan.sendIntent({ action: 'answer', id: ME, text: '' }); });
+      }
+      bind('#up', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: 1 }); beep(880, 0.08, 'sine'); renderPlayer(); });
+      bind('#down', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: -1 }); beep(300, 0.08, 'sine'); renderPlayer(); });
+
+      // Le bouton BUZZ
+      var bz = $('#buzz');
+      if (bz) {
+        bz.onclick = function () {
+          if (s.phase !== 'buzzing' || s.buzzer) return;
+          chan.sendIntent({ action: 'buzz', id: ME, name: name });
+          beep(180, 0.25, 'square'); vibrate([0, 90, 40, 90]);
+          bz.classList.add('animate-pop');
+        };
+      }
+    }
+
+    renderPlayer();
+  }
+
+  /* Gros bouton BUZZ (réutilisé). disabled = verrouillé. */
+  function buzzButton(disabled, label, sub) {
+    return [
+      '<div class="flex flex-col items-center w-full">',
+      '  <button id="buzz" ' + (disabled ? 'disabled' : '') + ' class="select-none w-64 h-64 rounded-full text-5xl font-extrabold flex items-center justify-center transition ' +
+      (disabled
+        ? 'bg-white/10 text-white/40 cursor-not-allowed'
+        : 'bg-gradient-to-br from-neon-pink to-rose-600 text-white shadow-[0_0_60px_rgba(255,46,154,.6)] animate-ring active:animate-pop') + '">' + esc(label) + '</button>',
+      '  <p class="mt-6 text-white/60 text-lg">' + esc(sub) + '</p>',
+      '</div>'
+    ].join('');
+  }
+
+  /* --------------------------------------------------------------------------
+     7. Leaderboard (partagé hôte/joueur)
+     -------------------------------------------------------------------------- */
+  function leaderboardArr(players) {
+    return Object.keys(players || {}).map(function (k) { return players[k]; })
+      .sort(function (a, b) { return b.score - a.score || a.name.localeCompare(b.name); });
+  }
+  function renderLeaderboard(lb, present, highlightId) {
+    if (!lb.length) return '<p class="text-white/40 text-center py-3">Aucun joueur pour l\'instant…</p>';
+    var medals = ['🥇', '🥈', '🥉'];
+    return '<div class="space-y-2">' + lb.map(function (p, i) {
+      var on = present && present[p.id];
+      var hi = highlightId && p.id === highlightId;
+      return [
+        '<div class="flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/30 ring-1 ring-neon-violet' : 'bg-black/20') + '">',
+        '  <div class="w-7 text-center text-lg font-extrabold ' + (i < 3 ? '' : 'text-white/40') + '">' + (medals[i] || (i + 1)) + '</div>',
+        '  <div class="flex-1 font-bold truncate ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + '</div>',
+        '  <div class="font-extrabold text-neon-gold tabular-nums">' + p.score + '</div>',
+        '</div>'
+      ].join('');
+    }).join('') + '</div>';
+  }
+
+  /* Export du classement final en image (html2canvas). */
+  function exportLeaderboard(s) {
+    var lb = leaderboardArr(s.players);
+    var card = document.createElement('div');
+    card.style.cssText = 'position:fixed;left:-9999px;top:0;width:480px;padding:32px;background:linear-gradient(160deg,#0b0014,#1a0b2e);color:#fff;font-family:"Baloo 2",sans-serif;border-radius:24px;';
+    card.innerHTML = '<div style="text-align:center;font-size:40px">🏆</div>' +
+      '<div style="text-align:center;font-size:26px;font-weight:800;margin-bottom:4px">' + esc(s.partyName) + '</div>' +
+      '<div style="text-align:center;color:#ffffff99;margin-bottom:20px">Classement final · ' + s.round + ' manche(s)</div>' +
+      renderLeaderboard(lb, {}, null);
+    document.body.appendChild(card);
+    if (!window.html2canvas) { toast('Export indisponible', 'err'); card.remove(); return; }
+    html2canvas(card, { backgroundColor: null, scale: 2 }).then(function (canvas) {
+      card.remove();
+      var a = document.createElement('a');
+      a.download = 'blindtest-' + (s.partyName || 'classement').replace(/\s+/g, '-').toLowerCase() + '.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+      toast('Image exportée 📸', 'ok');
+    }).catch(function () { card.remove(); toast('Échec de l\'export', 'err'); });
+  }
+
+  /* Helper de liaison sûre (no-op si l'élément n'existe pas). */
+  function bind(sel, fn) { var e = $(sel); if (e) e.onclick = fn; }
+
+  /* --------------------------------------------------------------------------
+     8. Démarrage
+     -------------------------------------------------------------------------- */
+  if (!SB_URL || !window.supabase) {
+    app.innerHTML = '<div class="flex-1 flex items-center justify-center p-8 text-center text-white/70">Configuration Supabase manquante.<br>Vérifie assets/js/supabase-config.js</div>';
+  } else {
+    route();
+  }
+})();
+
+</script>
+</body>
+</html>

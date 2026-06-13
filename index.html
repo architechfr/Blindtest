@@ -501,10 +501,11 @@
   function initialState(code, hostName, partyName, cfg) {
     return {
       code: code, hostName: hostName, partyName: partyName, config: cfg,
-      round: 0, phase: 'lobby', theme: '',
+      round: 0, phase: 'lobby', theme: '', mode: 'classic', teams: 0,
+      source: null, _srcIdx: -1, year: null, guesses: {},
       buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
-      players: {},   // id -> { id, name, score }
-      history: []    // { round, buzzer, answer, correct, votes }
+      players: {},   // id -> { id, name, score, team }
+      history: []
     };
   }
 
@@ -518,9 +519,25 @@
     function persist() { store.set('hostGame', state); }
     function publish() { persist(); if (chan) chan.sendState(state); renderHost(); }
 
+    function assignTeam(pl) {
+      if (!state.teams) { pl.team = null; return; }
+      var counts = []; for (var i = 0; i < state.teams; i++) counts[i] = 0;
+      Object.keys(state.players).forEach(function (id) {
+        var t = state.players[id].team;
+        if (typeof t === 'number' && t < state.teams && id !== pl.id) counts[t]++;
+      });
+      var min = 0; for (var j = 1; j < state.teams; j++) if (counts[j] < counts[min]) min = j;
+      pl.team = min;
+    }
+    function reassignTeams() {
+      var ids = leaderboardArr(state.players).map(function (p) { return p.id; });
+      ids.forEach(function (id, i) { state.players[id].team = state.teams ? (i % state.teams) : null; });
+    }
     function ensurePlayer(id, name) {
-      if (!state.players[id]) state.players[id] = { id: id, name: name || 'Joueur', score: 0 };
-      else if (name) state.players[id].name = name;
+      if (!state.players[id]) {
+        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null };
+        if (state.teams) assignTeam(state.players[id]);
+      } else if (name) state.players[id].name = name;
       return state.players[id];
     }
 
@@ -534,6 +551,7 @@
       } else if (p.action === 'buzz') {
         // Premier buzz reçu pendant la phase "buzzing" gagne.
         if (state.phase === 'buzzing' && !state.buzzer) {
+          if (state.mode === 'fredonne' && state.source && state.source.id === p.id) return; // le fredonneur ne buzze pas
           var pl = ensurePlayer(p.id, p.name);
           state.buzzer = { id: pl.id, name: pl.name };
           state.phase = 'answering';
@@ -543,7 +561,7 @@
       } else if (p.action === 'answer') {
         if (state.phase === 'answering' && state.buzzer && state.buzzer.id === p.id) {
           state.answer = String(p.text || '').slice(0, 120);
-          state.phase = 'voting';
+          state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
           beep(520, 0.12, 'sine');
           publish();
         }
@@ -551,6 +569,17 @@
         if (state.phase === 'voting' && state.buzzer && state.buzzer.id !== p.id) {
           state.votes[p.id] = p.value === 1 ? 1 : -1;
           publish();
+        }
+      } else if (p.action === 'judge') {
+        // Fredonne : le fredonneur (source) tranche.
+        if (state.phase === 'judging' && state.source && state.source.id === p.id) {
+          validate(p.correct === true);
+        }
+      } else if (p.action === 'guess') {
+        // Devine l'année : un joueur propose une année.
+        if (state.phase === 'year_guess') {
+          var gy = parseInt(p.year, 10);
+          if (!isNaN(gy)) { ensurePlayer(p.id, p.name); state.guesses[p.id] = gy; beep(660, 0.06, 'sine'); publish(); }
         }
       } else if (p.action === 'leave') {
         // On garde le score (reconnexion possible) mais on peut nettoyer le lobby.
@@ -571,15 +600,63 @@
     });
 
     /* Actions hôte (machine à états) */
-    function launchRound() {
-      state.round += 1;
+    function resetRound() {
+      state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
+    }
+    function armBuzz() {
       state.phase = 'armed';
-      state.buzzer = null; state.answer = null; state.votes = {}; state.result = null;
       state.buzzAt = Date.now() + BUZZ_LOCK_MS;
       publish();
       setTimeout(function () {
         if (state.phase === 'armed') { state.phase = 'buzzing'; beep(740, 0.12, 'sine'); publish(); }
       }, BUZZ_LOCK_MS);
+    }
+    function launchRound() {
+      state.round += 1;
+      resetRound();
+      if (state.mode === 'year') { state.phase = 'year_guess'; publish(); return; }
+      if (state.mode === 'fredonne') {
+        var ids = leaderboardArr(state.players).map(function (p) { return p.id; });
+        if (!ids.length) { toast('Aucun joueur pour fredonner', 'err'); state.round -= 1; state.phase = 'lobby'; publish(); return; }
+        state._srcIdx = state._srcIdx + 1;
+        var sid = ids[state._srcIdx % ids.length];
+        state.source = { id: sid, name: state.players[sid].name };
+      } else {
+        state.source = null;
+      }
+      armBuzz();
+    }
+    function hostBuzz() {
+      if (state.phase === 'buzzing' && !state.buzzer && state.mode === 'fredonne' && (!state.source || state.source.id !== ME)) {
+        var pl = ensurePlayer(ME, state.hostName);
+        state.buzzer = { id: pl.id, name: pl.name };
+        state.phase = 'answering';
+        beep(180, 0.35, 'square'); vibrate([0, 120, 60, 120]);
+        publish();
+      }
+    }
+    function hostAnswer(text) {
+      if (state.phase === 'answering' && state.buzzer && state.buzzer.id === ME) {
+        state.answer = String(text || '').slice(0, 120);
+        state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
+        publish();
+      }
+    }
+    function revealYear(yr) {
+      yr = parseInt(yr, 10);
+      if (isNaN(yr)) { toast('Entre une année valide', 'err'); return; }
+      state.year = yr;
+      var best = Infinity;
+      Object.keys(state.guesses).forEach(function (id) { var d = Math.abs(state.guesses[id] - yr); if (d < best) best = d; });
+      var winners = [];
+      Object.keys(state.guesses).forEach(function (id) {
+        if (Math.abs(state.guesses[id] - yr) === best) { winners.push(id); if (state.players[id]) state.players[id].score += state.config.pointsBuzz; }
+      });
+      state.result = { year: yr, winners: winners, best: best };
+      state.phase = 'year_reveal';
+      state.history.push({ round: state.round, year: yr });
+      confetti(150); beep(880, 0.3, 'sine');
+      publish();
     }
     function validate(correct) {
       if (!state.buzzer) return;
@@ -603,8 +680,8 @@
     function endGame() { state.phase = 'ended'; confetti(240); publish(); }
     function replay() {
       Object.keys(state.players).forEach(function (id) { state.players[id].score = 0; });
-      state.round = 0; state.phase = 'lobby';
-      state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.history = [];
+      state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.source = null;
+      resetRound(); state.history = [];
       publish();
     }
     function tallyVotes() {
@@ -626,7 +703,7 @@
       var present = s._present || {};
 
       var THEME_PRESETS = ['Années 80', 'Années 90', 'Années 2000', 'Disney', 'Rap FR', 'Variété FR', 'Rock', 'Films', 'Séries TV', 'Dessins animés', 'Été', 'Karaoké'];
-      var showTheme = (s.phase === 'lobby' || s.phase === 'reveal');
+      var showTheme = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal');
       var themeBar = [
         '<div class="glass rounded-2xl p-3 mb-4">',
         '  <div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">🎯 Thème de la manche</span>' + (s.theme ? '<button id="themeClear" class="text-xs text-white/40 underline">effacer</button>' : '') + '</div>',
@@ -635,6 +712,18 @@
         '</div>'
       ].join('');
 
+      var MODES = [{ id: 'classic', name: '🔊 Classique' }, { id: 'fredonne', name: '🎶 Fredonne' }, { id: 'year', name: '📅 Année' }];
+      var modeBar = [
+        '<div class="glass rounded-2xl p-3 mb-4">',
+        '  <div class="text-xs font-bold uppercase text-white/50 mb-2">🎮 Mode de jeu</div>',
+        '  <div class="grid grid-cols-3 gap-2">' + MODES.map(function (m) { return '<button class="modeChip py-2 rounded-xl text-sm font-bold ' + (s.mode === m.id ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '" data-mode="' + m.id + '">' + m.name + '</button>'; }).join('') + '</div>',
+        '  <div class="text-xs font-bold uppercase text-white/50 mt-3 mb-2">👥 Équipes</div>',
+        '  <div class="grid grid-cols-4 gap-2">' + [0, 2, 3, 4].map(function (n) { return '<button class="teamChip py-2 rounded-xl text-sm font-bold ' + (s.teams === n ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
+        '</div>'
+      ].join('');
+
+      var isFred = s.mode === 'fredonne', isYear = s.mode === 'year';
+      var modeIcon = isYear ? '📅' : isFred ? '🎶' : '🎵';
       var phaseBlock = '';
       if (s.phase === 'lobby') {
         var nb = lb.length;
@@ -654,15 +743,28 @@
           '  <button id="copyLink" class="mt-4 text-sm text-white/60 underline">Copier le lien d\'invitation</button>',
           '  <div class="mt-6 flex items-center justify-center gap-2 text-white/80 font-bold"><span class="text-2xl">👥</span> ' + nb + ' joueur' + (nb > 1 ? 's' : '') + ' dans le salon</div>',
              chips,
-          '  <button id="launch" class="mt-6 w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop ' + (nb ? '' : 'opacity-50 pointer-events-none') + '">Lancer la manche 1 🎵</button>',
+          '  <button id="launch" class="mt-6 w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop ' + (nb ? '' : 'opacity-50 pointer-events-none') + '">Lancer la manche ' + (s.round + 1) + ' ' + modeIcon + '</button>',
           '</div>'
         ].join('');
       } else if (s.phase === 'armed') {
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">Buzz verrouillé…</p><p class="text-white/50">Lance le morceau maintenant !</p></div>';
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">' + (isFred ? '🎶 ' + esc(s.source ? s.source.name : '') + ' va fredonner' : 'Buzz verrouillé…') + '</p><p class="text-white/50">' + (isFred ? 'Tiens-toi prêt à buzzer !' : 'Lance le morceau maintenant !') + '</p></div>';
       } else if (s.phase === 'buzzing') {
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">🔔</div><p class="text-2xl font-extrabold text-neon-lime">BUZZ OUVERT</p><p class="text-white/50">En attente du premier buzz…</p></div>';
+        var hostCanBuzz = isFred && (!s.source || s.source.id !== ME);
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…</p>' + (hostCanBuzz ? '<button id="hostBuzz" class="mt-5 w-full py-5 rounded-2xl text-2xl font-extrabold border-4 border-neon-cyan bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_40px_rgba(255,46,154,.6)] active:animate-pop">BUZZER 🔔</button>' : '') + '</div>';
       } else if (s.phase === 'answering') {
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><p class="text-white/50 uppercase text-sm mb-1">A buzzé en premier</p><div class="text-4xl font-extrabold text-neon-pink text-glow mb-2">' + esc(s.buzzer.name) + '</div><p class="text-white/60">Il/elle écrit sa réponse…</p><button id="forceVote" class="mt-4 text-sm text-white/50 underline">Réponse orale → passer au vote</button></div>';
+        if (s.buzzer.id === ME) {
+          phaseBlock = [
+            '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+            '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
+            '  <p class="text-white/60 mb-3">Écris ta réponse</p>',
+            '  <input id="hostAns" maxlength="120" placeholder="Titre / artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3 text-center text-lg outline-none focus:ring-2 ring-neon-pink mb-3" />',
+            '  <button id="hostSend" class="w-full py-3 rounded-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider ma réponse</button>',
+            '  <button id="hostOral" class="mt-2 text-white/40 text-sm">Je réponds à l\'oral</button>',
+            '</div>'
+          ].join('');
+        } else {
+          phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><p class="text-white/50 uppercase text-sm mb-1">A buzzé en premier</p><div class="text-4xl font-extrabold text-neon-pink text-glow mb-2">' + esc(s.buzzer.name) + '</div><p class="text-white/60">Il/elle répond…</p><button id="forceVote" class="mt-4 text-sm text-white/50 underline">Réponse orale → ' + (isFred ? 'verdict' : 'vote') + '</button></div>';
+        }
       } else if (s.phase === 'voting') {
         var t = tallyVotes();
         phaseBlock = [
@@ -673,6 +775,48 @@
           '  <div class="grid grid-cols-2 gap-3">',
           '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
           '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
+          '  </div>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'judging') {
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+          '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + '</p>',
+          '  <div class="text-3xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-xl">(à l\'oral)</span>') + '</div>',
+          '  <p class="text-white/55 mb-3">🎶 ' + esc(s.source ? s.source.name : '') + ' valide… <span class="text-white/35 text-sm block">(ou tranche toi-même)</span></p>',
+          '  <div class="grid grid-cols-2 gap-3">',
+          '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
+          '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
+          '  </div>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'year_guess') {
+        var ng = Object.keys(s.guesses).length, np = lb.length;
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+          '  <div class="text-5xl mb-1">📅</div>',
+          '  <p class="bt-title text-xl font-extrabold glow-cyan">DEVINE L\'ANNÉE</p>',
+          '  <p class="text-white/55 mt-1">Lance le morceau. Les joueurs proposent une année.</p>',
+          '  <p class="mt-3 text-white/80 font-bold">' + ng + '/' + np + ' ont répondu</p>',
+          '  <input id="yrTarget" type="number" placeholder="Année correcte (ex : 1987)" class="w-full bg-black/40 rounded-xl px-4 py-3 text-center text-xl font-bold outline-none focus:ring-2 ring-neon-cyan mt-3 mb-3" />',
+          '  <button id="yrReveal" class="w-full py-3 rounded-xl font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop">Révéler le résultat 🎉</button>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'year_reveal') {
+        var yrRows = leaderboardArr(s.players).filter(function (p) { return s.guesses[p.id] != null; }).map(function (p) {
+          var won = (s.result.winners || []).indexOf(p.id) >= 0;
+          return '<div class="flex justify-between px-3 py-1.5 rounded-lg ' + (won ? 'bg-neon-lime/20 ring-1 ring-neon-lime' : 'bg-black/20') + '"><span class="font-bold">' + esc(p.name) + '</span><span class="tabular-nums">' + s.guesses[p.id] + (won ? ' 🏆' : '') + '</span></div>';
+        }).join('');
+        var winNames = (s.result.winners || []).map(function (id) { return s.players[id] ? s.players[id].name : ''; }).filter(Boolean);
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+          '  <p class="text-white/55 uppercase text-sm">L\'année était</p>',
+          '  <div class="text-5xl font-extrabold text-neon-gold my-2 text-glow">' + s.year + '</div>',
+          (winNames.length ? '  <p class="text-neon-lime font-bold mb-3">🏆 ' + esc(winNames.join(', ')) + ' (+' + s.config.pointsBuzz + ')</p>' : '  <p class="text-white/50 mb-3">Personne n\'a deviné</p>'),
+          '  <div class="space-y-1 text-sm mb-4 text-left">' + yrRows + '</div>',
+          '  <div class="grid grid-cols-2 gap-3">',
+          '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
+          '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
           '  </div>',
           '</div>'
         ].join('');
@@ -712,10 +856,12 @@
         '      <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
         '    </div>',
         '  </div>',
+        (showTheme ? modeBar : ''),
         (showTheme ? themeBar : ''),
         '  <div class="mb-5">' + phaseBlock + '</div>',
         '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
         '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/40">' + esc(s.partyName) + '</span></div>',
+             (s.teams ? renderTeams(s) : ''),
              renderLeaderboard(lb, present),
         '  </div>',
         '  <button id="quit" class="mt-4 text-white/40 text-sm">Quitter la partie</button>',
@@ -729,7 +875,7 @@
         if (copy) copy.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(joinUrl); toast('Lien copié !', 'ok'); };
         var l = $('#launch'); if (l) l.onclick = function () { if (Object.keys(s.players).length) launchRound(); else toast('Aucun joueur connecté', 'err'); };
       }
-      bind('#forceVote', function () { s.phase = 'voting'; s.answer = null; publish(); });
+      bind('#forceVote', function () { s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; publish(); });
       bind('#ok', function () { validate(true); });
       bind('#ko', function () { validate(false); });
       bind('#next', launchRound);
@@ -737,6 +883,13 @@
       bind('#replay', replay);
       bind('#export', function () { exportLeaderboard(s); });
       bind('#gear', openSettings);
+      bind('#hostBuzz', hostBuzz);
+      var hAns = $('#hostAns'); if (hAns) hAns.focus();
+      bind('#hostSend', function () { var e = $('#hostAns'); hostAnswer(e ? e.value.trim() : ''); });
+      bind('#hostOral', function () { hostAnswer(''); });
+      bind('#yrReveal', function () { var e = $('#yrTarget'); revealYear(e ? e.value : ''); });
+      Array.prototype.forEach.call(document.querySelectorAll('.modeChip'), function (b) { b.onclick = function () { s.mode = b.getAttribute('data-mode'); publish(); }; });
+      Array.prototype.forEach.call(document.querySelectorAll('.teamChip'), function (b) { b.onclick = function () { s.teams = parseInt(b.getAttribute('data-teams'), 10) || 0; reassignTeams(); publish(); }; });
       Array.prototype.forEach.call(document.querySelectorAll('.themeChip'), function (b) { b.onclick = function () { s.theme = b.getAttribute('data-theme'); publish(); }; });
       var tf = $('#themeFree'); if (tf) tf.onchange = function () { s.theme = tf.value.trim(); publish(); };
       bind('#themeClear', function () { s.theme = ''; publish(); });
@@ -778,7 +931,7 @@
   function startPlayer(code, name) {
     var view = { phase: 'connecting' };
     var lastState = null;
-    var voted = false, lastPhase = null;
+    var voted = false, guessed = false, lastPhase = null;
 
     var chan = openChannel(code, { id: ME, name: name, role: 'player' }, {
       onState: function (st) {
@@ -786,9 +939,11 @@
         if (st.phase === 'buzzing' && lastPhase !== 'buzzing') { beep(740, 0.12, 'sine'); vibrate(40); }
         if (st.phase === 'answering' && st.buzzer && st.buzzer.id === ME && lastPhase !== 'answering') { beep(180, 0.3, 'square'); vibrate([0, 100, 50, 100]); }
         if (st.phase === 'voting' && lastPhase !== 'voting') voted = false;
+        if (st.phase === 'year_guess' && lastPhase !== 'year_guess') guessed = false;
         if (st.phase === 'reveal' && st.result && st.result.correct && lastPhase !== 'reveal') confetti(120);
+        if (st.phase === 'year_reveal' && lastPhase !== 'year_reveal' && st.result && (st.result.winners || []).indexOf(ME) >= 0) confetti(140);
         if (st.phase === 'ended' && lastPhase !== 'ended') confetti(220);
-        if (st.round !== (lastState && lastState.round)) voted = false;
+        if (st.round !== (lastState && lastState.round)) { voted = false; guessed = false; }
         lastPhase = st.phase;
         lastState = st;
         renderPlayer();
@@ -812,14 +967,17 @@
       var lb = leaderboardArr(s.players);
       var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
       var isBuzzer = s.buzzer && s.buzzer.id === ME;
+      var isSource = s.source && s.source.id === ME;
 
       var center = '';
       if (s.phase === 'lobby') {
-        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-float">🍿</div><p class="text-xl font-bold">En attente du lancement…</p><p class="text-white/50 mt-1">L\'hôte va démarrer la manche 1</p></div>';
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-float">🍿</div><p class="text-xl font-bold">En attente du lancement…</p><p class="text-white/50 mt-1">L\'hôte va démarrer la partie</p></div>';
       } else if (s.phase === 'armed') {
-        center = buzzButton(true, '⏳', 'Prépare-toi…');
+        if (s.mode === 'fredonne' && isSource) center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3">🎶</div><p class="text-2xl font-extrabold text-neon-lime">À toi de fredonner !</p><p class="text-white/55 mt-1">Choisis un morceau dans ta tête…</p></div>';
+        else center = buzzButton(true, '⏳', 'Prépare-toi…');
       } else if (s.phase === 'buzzing') {
-        center = buzzButton(false, 'BUZZ', 'Appuie vite !');
+        if (s.mode === 'fredonne' && isSource) center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-pulse">🎶</div><p class="text-2xl font-extrabold text-neon-lime">FREDONNE !</p><p class="text-white/55 mt-1">Les autres essaient de deviner</p></div>';
+        else center = buzzButton(false, 'BUZZ', 'Appuie vite !');
       } else if (s.phase === 'answering') {
         if (isBuzzer) {
           center = [
@@ -848,6 +1006,37 @@
             '</div>'
           ].join('');
         }
+      } else if (s.phase === 'judging') {
+        if (isSource) {
+          center = [
+            '<div class="w-full text-center animate-slidein">',
+            '  <p class="text-white/60 mb-1">' + esc(s.buzzer.name) + ' répond :</p>',
+            '  <div class="text-2xl font-extrabold mb-5">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-lg">(à l\'oral)</span>') + '</div>',
+            '  <p class="text-white/55 mb-3">C\'était ça ?</p>',
+            '  <div class="grid grid-cols-2 gap-4"><button id="jok" class="py-8 rounded-2xl bg-neon-lime text-black text-3xl font-extrabold active:animate-pop">✓</button><button id="jko" class="py-8 rounded-2xl bg-rose-500 text-3xl font-extrabold active:animate-pop">✗</button></div>',
+            '</div>'
+          ].join('');
+        } else {
+          center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">🤔</div><p class="text-xl font-bold">' + esc(s.buzzer.name) + ' a répondu</p><p class="text-white/50 mt-1">🎶 ' + esc(s.source ? s.source.name : '') + ' valide…</p></div>';
+        }
+      } else if (s.phase === 'year_guess') {
+        if (guessed) {
+          center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">⏳</div><p class="text-xl font-bold">Réponse enregistrée ✓</p><p class="text-white/50 mt-1">En attente des autres…</p></div>';
+        } else {
+          center = [
+            '<div class="w-full text-center animate-slidein">',
+            '  <div class="text-5xl mb-2">📅</div>',
+            '  <p class="text-xl font-extrabold mb-1">En quelle année ?</p>',
+            '  <p class="text-white/55 mb-4">Devine l\'année de sortie du morceau</p>',
+            '  <input id="yr" type="number" inputmode="numeric" placeholder="1987" class="w-full bg-black/40 rounded-xl px-4 py-4 text-2xl text-center font-bold outline-none focus:ring-2 ring-neon-cyan mb-4" />',
+            '  <button id="yrSend" class="w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider</button>',
+            '</div>'
+          ].join('');
+        }
+      } else if (s.phase === 'year_reveal') {
+        var myG = s.guesses ? s.guesses[ME] : null;
+        var iWon = s.result && (s.result.winners || []).indexOf(ME) >= 0;
+        center = '<div class="text-center animate-slidein"><p class="text-white/55 uppercase text-sm">L\'année était</p><div class="text-6xl font-extrabold text-neon-gold my-2 text-glow">' + (s.year || '?') + '</div>' + (myG != null ? '<p class="text-white/70">Ton choix : <span class="font-bold">' + myG + '</span></p>' : '<p class="text-white/40">Tu n\'as pas répondu</p>') + (iWon ? '<p class="text-neon-lime font-extrabold text-xl mt-2">🏆 Gagné ! +' + s.config.pointsBuzz + '</p>' : '') + '</div>';
       } else if (s.phase === 'reveal') {
         var goodForMe = isBuzzer && s.result.correct;
         center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p></div>';
@@ -868,6 +1057,7 @@
         '    <div class="flex items-center gap-2 text-sm"><button id="gear" class="w-8 h-8 rounded-full glass flex items-center justify-center" aria-label="Réglages">⚙️</button><span class="text-white/40">Manche</span> <span class="font-extrabold text-neon-cyan">' + (s.round || '–') + '</span></div>',
         '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
+        (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
         (s.theme && s.phase !== 'ended' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span></div>' : ''),
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
         '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME) + '</div>',
@@ -887,6 +1077,19 @@
       }
       bind('#up', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: 1 }); beep(880, 0.08, 'sine'); renderPlayer(); });
       bind('#down', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: -1 }); beep(300, 0.08, 'sine'); renderPlayer(); });
+
+      // Fredonne : le fredonneur tranche
+      bind('#jok', function () { chan.sendIntent({ action: 'judge', id: ME, correct: true }); beep(880, 0.1, 'sine'); });
+      bind('#jko', function () { chan.sendIntent({ action: 'judge', id: ME, correct: false }); beep(200, 0.1, 'sawtooth'); });
+
+      // Devine l'année : soumission
+      var yr = $('#yr');
+      if (yr) {
+        yr.focus();
+        var sendGuess = function () { var v = parseInt(yr.value, 10); if (isNaN(v)) { toast('Entre une année', 'err'); return; } guessed = true; chan.sendIntent({ action: 'guess', id: ME, name: name, year: v }); beep(660, 0.08, 'sine'); renderPlayer(); };
+        bind('#yrSend', sendGuess);
+        yr.onkeydown = function (e) { if (e.key === 'Enter') sendGuess(); };
+      }
 
       // Le bouton BUZZ
       var bz = $('#buzz');
@@ -919,9 +1122,35 @@
   /* --------------------------------------------------------------------------
      7. Leaderboard (partagé hôte/joueur)
      -------------------------------------------------------------------------- */
+  var TEAM_COLORS = ['#ff4d6d', '#3aa0ff', '#a3e635', '#fbbf24'];
+  var TEAM_NAMES = ['Rouge', 'Bleu', 'Vert', 'Jaune'];
   function leaderboardArr(players) {
     return Object.keys(players || {}).map(function (k) { return players[k]; })
       .sort(function (a, b) { return b.score - a.score || a.name.localeCompare(b.name); });
+  }
+  function teamTotals(s) {
+    if (!s.teams) return [];
+    var arr = [];
+    for (var i = 0; i < s.teams; i++) arr.push({ idx: i, name: TEAM_NAMES[i], c: TEAM_COLORS[i], score: 0, count: 0 });
+    Object.keys(s.players || {}).forEach(function (id) {
+      var p = s.players[id];
+      if (typeof p.team === 'number' && p.team < s.teams) { arr[p.team].score += p.score; arr[p.team].count++; }
+    });
+    arr.sort(function (a, b) { return b.score - a.score; });
+    return arr;
+  }
+  function renderTeams(s) {
+    var t = teamTotals(s); if (!t.length) return '';
+    var max = Math.max(1, t[0].score);
+    return '<div class="mb-3 space-y-2">' + t.map(function (team) {
+      var pct = team.score > 0 ? Math.max(8, Math.round(team.score / max * 100)) : 0;
+      return '<div class="flex items-center gap-3 rounded-xl px-3 py-2 bg-black/25">'
+        + '<div class="w-3 h-3 rounded-full shrink-0" style="background:' + team.c + '"></div>'
+        + '<div class="flex-1 min-w-0"><div class="font-extrabold text-sm">Équipe ' + team.name + ' <span class="text-white/40 font-normal">· ' + team.count + '</span></div>'
+        + '<div class="h-1.5 mt-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full" style="width:' + pct + '%;background:' + team.c + '"></div></div></div>'
+        + '<div class="font-extrabold tabular-nums text-lg" style="color:' + team.c + '">' + team.score + '</div>'
+        + '</div>';
+    }).join('') + '</div>';
   }
   function avatarGrad(name) {
     var h = 0, s = String(name || '?');
@@ -941,6 +1170,7 @@
         '<div class="flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/25') + '">',
         '  <div class="w-6 text-center text-lg font-extrabold ' + (i < 3 ? '' : 'text-white/40') + '">' + (medals[i] || (i + 1)) + '</div>',
         '  <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ' + (on ? '' : 'opacity-40') + '" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</div>',
+        (typeof p.team === 'number' ? '  <span class="w-2.5 h-2.5 rounded-full shrink-0 -ml-1.5" title="Équipe ' + (TEAM_NAMES[p.team] || '') + '" style="background:' + (TEAM_COLORS[p.team] || '#888') + '"></span>' : ''),
         '  <div class="flex-1 min-w-0">',
         '    <div class="font-bold truncate text-sm ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + '</div>',
         '    <div class="h-1.5 mt-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="width:' + pct + '%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>',

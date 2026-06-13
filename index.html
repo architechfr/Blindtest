@@ -1050,6 +1050,9 @@
       '    <button id="setFs" class="py-3 rounded-xl glass font-bold text-sm ' + (deferredPrompt ? '' : 'col-span-2') + '">⛶ Plein écran</button>',
       '  </div>',
 
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Aide au développement</p>',
+      '  <button id="setFeedback" class="w-full py-3 rounded-xl glass font-bold flex items-center justify-center gap-2">💬 Donner mon avis / signaler un bug</button>',
+
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Crédits</p>',
       '  <div class="glass rounded-2xl p-4 text-center text-sm">',
       '    <div class="text-white/80">Conçu par <span class="font-bold text-neon-cyan">Florian</span></div>',
@@ -1085,6 +1088,75 @@
 
     bind('#setInstall', function () { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); } });
     bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
+    bind('#setFeedback', openFeedback);
+  }
+
+  /* Formulaire de retour d'expérience (envoi par email, sans serveur). */
+  function openFeedback() {
+    if (!settingsEl) return;
+    var fbType = 'idea', fbRating = 0;
+    function chip(id, emo, lbl) {
+      return '<button data-fbt="' + id + '" class="fbchip flex-1 py-2.5 rounded-xl glass font-bold text-sm">' + emo + ' ' + lbl + '</button>';
+    }
+    function render() {
+      settingsEl.innerHTML = [
+        '<div class="set-panel p-5 animate-slidein">',
+        '  <div class="flex items-center justify-between mb-3">',
+        '    <button id="fbBack" class="text-white/60 text-sm">← Retour</button>',
+        '    <h2 class="bt-title text-lg font-extrabold glow-cyan">TON AVIS</h2>',
+        '    <button id="fbClose" class="w-9 h-9 rounded-full glass text-lg">✕</button>',
+        '  </div>',
+        '  <p class="text-white/55 text-sm mb-4">Aide à améliorer l\'app : un bug, une idée, un ressenti — tout est utile 🙏</p>',
+        '  <p class="text-xs font-bold uppercase text-white/50 mb-2">Type</p>',
+        '  <div class="flex gap-2 mb-4">' + chip('bug', '🐞', 'Bug') + chip('idea', '💡', 'Idée') + chip('other', '💬', 'Autre') + '</div>',
+        '  <p class="text-xs font-bold uppercase text-white/50 mb-2">Note globale</p>',
+        '  <div id="fbStars" class="flex gap-1 text-3xl mb-4">' + [1, 2, 3, 4, 5].map(function (i) { return '<button data-star="' + i + '">★</button>'; }).join('') + '</div>',
+        '  <textarea id="fbMsg" rows="5" maxlength="1000" placeholder="Décris ton idée, le bug rencontré, ce que tu aimerais…" class="w-full bg-black/40 rounded-xl px-4 py-3 outline-none focus:ring-2 ring-neon-cyan mb-3"></textarea>',
+        '  <label class="flex items-center gap-2 text-sm text-white/60 mb-4"><input id="fbTech" type="checkbox" checked class="w-4 h-4" /> Inclure les infos techniques (aide au débogage)</label>',
+        '  <button id="fbSend" class="btn-glow w-full py-3.5 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">Envoyer 📨</button>',
+        '  <p class="text-white/35 text-xs text-center mt-3">Envoyé par email à archi.tech.fr@gmail.com</p>',
+        '</div>'
+      ].join('');
+      settingsEl.classList.remove('hidden');
+
+      Array.prototype.forEach.call(settingsEl.querySelectorAll('.fbchip'), function (b) {
+        var on = b.getAttribute('data-fbt') === fbType;
+        if (on) { b.classList.add('ring-2', 'ring-neon-pink'); }
+        b.onclick = function () { fbType = b.getAttribute('data-fbt'); render(); };
+      });
+      Array.prototype.forEach.call(settingsEl.querySelectorAll('#fbStars button'), function (b) {
+        var v = +b.getAttribute('data-star');
+        b.classList.add(v <= fbRating ? 'text-neon-gold' : 'opacity-40');
+        b.onclick = function () { fbRating = v; render(); };
+      });
+
+      bind('#fbBack', openSettings);
+      bind('#fbClose', closeSettings);
+      settingsEl.onclick = function (e) { if (e.target === settingsEl) closeSettings(); };
+
+      bind('#fbSend', function () {
+        var ta = $('#fbMsg');
+        var msg = ta ? ta.value.trim() : '';
+        if (!msg) { toast('Écris un petit message 🙂', 'err'); if (ta) ta.focus(); return; }
+        var tech = $('#fbTech') && $('#fbTech').checked;
+        var labels = { bug: '🐞 Bug', idea: '💡 Idée', other: '💬 Retour' };
+        var subject = '[DJ Blind Test] ' + (labels[fbType] || 'Retour') + (fbRating ? ' — ' + fbRating + '/5' : '');
+        var body = msg;
+        if (tech) {
+          body += '\n\n----- infos techniques -----\n'
+            + 'App : DJ Blind Test v1.1\n'
+            + 'Thème : ' + (prefs.theme || 'synthwave') + '\n'
+            + 'Écran : ' + (window.screen ? screen.width + 'x' + screen.height : '?') + ' (dpr ' + (window.devicePixelRatio || 1) + ')\n'
+            + 'Langue : ' + (navigator.language || '?') + '\n'
+            + 'Navigateur : ' + navigator.userAgent;
+        }
+        if (navigator.clipboard) navigator.clipboard.writeText(subject + '\n\n' + body).catch(function () {});
+        location.href = 'mailto:archi.tech.fr@gmail.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+        toast('Merci pour ton retour ! 🙏', 'ok');
+        setTimeout(closeSettings, 500);
+      });
+    }
+    render();
   }
 
   /* --------------------------------------------------------------------------

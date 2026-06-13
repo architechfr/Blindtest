@@ -149,6 +149,53 @@
 
     /* Confettis (canvas plein écran) */
     #confetti { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
+
+    /* ====================== THÈMES DE COULEUR ====================== */
+    body[data-theme="miami"] .bt-bg { background: linear-gradient(180deg,#03252e 0%,#063b46 22%,#0b6b6b 40%,#16a3a3 52%,#27d3c4 58%,#ff6ad5 63%,#ffd23f 65%,#06212b 65%,#03141a 100%); }
+    body[data-theme="miami"] .bt-sun { background: linear-gradient(180deg,#fff1c2,#ffd23f 28%,#ff6ad5 60%,#a21caf 100%); }
+    body[data-theme="miami"] .bt-grid { background-image: linear-gradient(to right,rgba(45,212,191,.6) 1.5px,transparent 1.5px),linear-gradient(to bottom,rgba(255,106,213,.5) 1.5px,transparent 1.5px); }
+
+    body[data-theme="outrun"] .bt-bg { background: linear-gradient(180deg,#1a0524 0%,#3b0a3f 24%,#7a1340 44%,#c01f3a 56%,#ff5e3a 62%,#ffb43d 65%,#1a0820 65%,#0a0410 100%); }
+    body[data-theme="outrun"] .bt-sun { background: linear-gradient(180deg,#fff3b0,#ffd23f 25%,#ff7a3d 55%,#ff2e3a 100%); }
+    body[data-theme="outrun"] .bt-grid { background-image: linear-gradient(to right,rgba(255,138,0,.6) 1.5px,transparent 1.5px),linear-gradient(to bottom,rgba(255,60,90,.5) 1.5px,transparent 1.5px); }
+
+    body[data-theme="ice"] .bt-bg { background: linear-gradient(180deg,#02061a 0%,#071233 24%,#0b2a6b 44%,#1455c0 56%,#3aa0ff 62%,#9fe3ff 65%,#04122e 65%,#020816 100%); }
+    body[data-theme="ice"] .bt-sun { background: linear-gradient(180deg,#ffffff,#cfeeff 30%,#5fb6ff 60%,#1455c0 100%); }
+    body[data-theme="ice"] .bt-grid { background-image: linear-gradient(to right,rgba(125,211,252,.65) 1.5px,transparent 1.5px),linear-gradient(to bottom,rgba(37,99,235,.5) 1.5px,transparent 1.5px); }
+
+    body[data-theme="galaxy"] .bt-bg { background: linear-gradient(180deg,#05010f 0%,#140531 26%,#3b1080 46%,#6d28d9 56%,#a21caf 62%,#ec4899 65%,#0f0524 65%,#05010f 100%); }
+    body[data-theme="galaxy"] .bt-sun { background: linear-gradient(180deg,#f5d0fe,#c084fc 30%,#a21caf 60%,#6d28d9 100%); }
+    body[data-theme="galaxy"] .bt-grid { background-image: linear-gradient(to right,rgba(139,92,246,.6) 1.5px,transparent 1.5px),linear-gradient(to bottom,rgba(236,72,153,.5) 1.5px,transparent 1.5px); }
+
+    body[data-theme="mint"] .bt-bg { background: linear-gradient(180deg,#04201f 0%,#073b35 24%,#0f6b5a 42%,#34d399 54%,#a7f3d0 60%,#fbcfe8 64%,#0a201d 64%,#041413 100%); }
+    body[data-theme="mint"] .bt-sun { background: linear-gradient(180deg,#fffde7,#a7f3d0 30%,#5eead4 55%,#f472b6 100%); }
+    body[data-theme="mint"] .bt-grid { background-image: linear-gradient(to right,rgba(94,234,212,.6) 1.5px,transparent 1.5px),linear-gradient(to bottom,rgba(244,114,182,.5) 1.5px,transparent 1.5px); }
+
+    body.bt-no-anim .bt-grid { animation: none; }
+
+    /* ====================== ROUE & MENU RÉGLAGES ====================== */
+    .gear { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 14px; z-index: 5;
+      width: 42px; height: 42px; border-radius: 50%; }
+    #settings.hidden { display: none; }
+    #settings { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; justify-content: center;
+      background: rgba(3,0,10,.62); backdrop-filter: blur(5px); }
+    @media (min-width: 540px) { #settings { align-items: center; } }
+    .set-panel { width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto;
+      border-radius: 26px 26px 0 0;
+      background: linear-gradient(180deg, rgba(22,7,44,.97), rgba(8,2,20,.99));
+      border: 1px solid rgba(34,211,238,.25);
+      box-shadow: 0 -12px 70px rgba(255,46,154,.25);
+      padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
+    @media (min-width: 540px) { .set-panel { border-radius: 26px; } }
+    .set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 13px 0; border-top: 1px solid rgba(255,255,255,.06); }
+    .swatch { width: 40px; height: 40px; border-radius: 13px; border: 2px solid transparent; cursor: pointer; transition: transform .12s; }
+    .swatch:active { transform: scale(.92); }
+    .swatch.active { border-color: #fff; box-shadow: 0 0 0 2px rgba(34,211,238,.7), 0 0 16px rgba(255,46,154,.5); }
+    .toggle { width: 52px; height: 30px; border-radius: 999px; background: rgba(255,255,255,.16); position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+    .toggle.on { background: linear-gradient(90deg,#22d3ee,#ff2e9a); }
+    .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left .2s; }
+    .toggle.on::after { left: 25px; }
   </style>
 </head>
 <body class="text-white font-display antialiased">
@@ -162,6 +209,9 @@
   <div class="bt-scan" aria-hidden="true"></div>
 
   <main id="app" class="w-full flex flex-col"></main>
+
+  <!-- Menu Réglages (overlay) -->
+  <div id="settings" class="hidden"></div>
 
   <!-- Confettis + Toasts -->
   <canvas id="confetti" aria-hidden="true"></canvas>
@@ -235,6 +285,7 @@
   var audioCtx = null;
   function beep(freq, dur, type) {
     try {
+      if (prefs && prefs.muted) return;
       if (!AC) return;
       if (!audioCtx) audioCtx = new AC();
       if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -247,13 +298,14 @@
       o.start(); o.stop(audioCtx.currentTime + (dur || 0.18));
     } catch (e) { /* audio bloqué, on ignore */ }
   }
-  function vibrate(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
+  function vibrate(pattern) { if (prefs && prefs.novib) return; try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
 
   /* Confettis plein écran (canvas, sans dépendance) */
   var _confCv = document.getElementById('confetti');
   var _confCtx = _confCv && _confCv.getContext('2d');
   var _conf = [], _confRAF = 0;
   function confetti(n) {
+    if (prefs && prefs.noanim) return;
     if (!_confCtx) return;
     var W = _confCv.width = window.innerWidth, H = _confCv.height = window.innerHeight;
     var colors = ['#ff2e9a', '#22d3ee', '#a3e635', '#fbbf24', '#8b5cf6', '#ff8a00'];
@@ -362,7 +414,8 @@
      -------------------------------------------------------------------------- */
   function renderHome() {
     app.innerHTML = [
-      '<div class="flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
+      '<div class="relative flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
+      '  <button id="gear" class="gear glass flex items-center justify-center text-lg" aria-label="Réglages">⚙️</button>',
       '  <div class="text-7xl mb-3 animate-float">📼</div>',
       '  <h1 class="bt-logo text-5xl sm:text-6xl text-center leading-none">BLIND<br>TEST</h1>',
       '  <p class="bt-title text-neon-cyan glow-cyan text-center text-sm tracking-[0.45em] mt-3 uppercase">Musical</p>',
@@ -393,6 +446,7 @@
     }
     $('#joinBtn').onclick = join;
     code.onkeydown = function (e) { if (e.key === 'Enter') join(); };
+    bind('#gear', openSettings);
   }
 
   /* --------------------------------------------------------------------------
@@ -642,8 +696,11 @@
       app.innerHTML = [
         '<div class="flex-1 flex flex-col px-5 py-6 max-w-lg mx-auto w-full">',
         '  <div class="flex items-center justify-between mb-4">',
-        '    <div><div class="text-xs text-white/40 uppercase tracking-wide">Hôte · ' + esc(s.hostName) + '</div><div class="text-xl font-extrabold">' + esc(s.partyName) + '</div></div>',
-        '    <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
+        '    <div class="min-w-0"><div class="text-xs text-white/40 uppercase tracking-wide">Hôte · ' + esc(s.hostName) + '</div><div class="text-xl font-extrabold truncate">' + esc(s.partyName) + '</div></div>',
+        '    <div class="flex items-center gap-3 shrink-0">',
+        '      <button id="gear" class="w-10 h-10 rounded-full glass flex items-center justify-center text-lg" aria-label="Réglages">⚙️</button>',
+        '      <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
+        '    </div>',
         '  </div>',
         '  <div class="mb-5">' + phaseBlock + '</div>',
         '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
@@ -668,6 +725,7 @@
       bind('#end', endGame);
       bind('#replay', replay);
       bind('#export', function () { exportLeaderboard(s); });
+      bind('#gear', openSettings);
       bind('#quit', function () { if (confirm('Quitter et supprimer la partie ?')) { store.del('hostGame'); teardown(); location.hash = ''; } });
     }
 
@@ -793,7 +851,7 @@
       app.innerHTML = [
         '<div class="flex-1 flex flex-col px-5 py-5 max-w-md mx-auto w-full">',
         '  <div class="flex items-center justify-between mb-2">',
-        '    <div class="text-sm"><span class="text-white/40">Manche</span> <span class="font-extrabold text-neon-cyan">' + (s.round || '–') + '</span></div>',
+        '    <div class="flex items-center gap-2 text-sm"><button id="gear" class="w-8 h-8 rounded-full glass flex items-center justify-center" aria-label="Réglages">⚙️</button><span class="text-white/40">Manche</span> <span class="font-extrabold text-neon-cyan">' + (s.round || '–') + '</span></div>',
         '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
@@ -804,6 +862,7 @@
 
       // Liaisons d'événements
       bind('#leave', function () { location.hash = ''; });
+      bind('#gear', openSettings);
       var ans = $('#ans');
       if (ans) {
         ans.focus();
@@ -924,8 +983,115 @@
   function bind(sel, fn) { var e = $(sel); if (e) e.onclick = fn; }
 
   /* --------------------------------------------------------------------------
+     7bis. MENU RÉGLAGES (thèmes, partage, préférences, crédits)
+     -------------------------------------------------------------------------- */
+  var prefs = {
+    theme: store.get('theme', 'synthwave'),
+    muted: store.get('muted', false),
+    novib: store.get('novib', false),
+    noanim: store.get('noanim', false)
+  };
+  function applyPrefs() {
+    document.body.setAttribute('data-theme', prefs.theme || 'synthwave');
+    document.body.classList.toggle('bt-no-anim', !!prefs.noanim);
+  }
+
+  var deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredPrompt = e; });
+
+  var THEMES = [
+    { id: 'synthwave', name: 'Synthwave', sw: 'linear-gradient(135deg,#ff2e9a,#8b5cf6,#22d3ee)' },
+    { id: 'miami', name: 'Miami', sw: 'linear-gradient(135deg,#27d3c4,#ff6ad5)' },
+    { id: 'outrun', name: 'Outrun', sw: 'linear-gradient(135deg,#ffb43d,#ff2e3a,#7a1340)' },
+    { id: 'ice', name: 'Cyber Ice', sw: 'linear-gradient(135deg,#9fe3ff,#1455c0)' },
+    { id: 'galaxy', name: 'Galaxy', sw: 'linear-gradient(135deg,#c084fc,#ec4899,#3b1080)' },
+    { id: 'mint', name: 'Vapor Mint', sw: 'linear-gradient(135deg,#5eead4,#fbcfe8)' }
+  ];
+
+  var settingsEl = document.getElementById('settings');
+  function closeSettings() { if (settingsEl) { settingsEl.classList.add('hidden'); settingsEl.innerHTML = ''; } }
+  function openSettings() {
+    if (!settingsEl) return;
+    var appUrl = location.origin + location.pathname;
+    var swatches = THEMES.map(function (t) {
+      return '<button class="swatch ' + (prefs.theme === t.id ? 'active' : '') + '" data-theme="' + t.id + '" title="' + t.name + '" style="background:' + t.sw + '"></button>';
+    }).join('');
+    settingsEl.innerHTML = [
+      '<div class="set-panel p-5 animate-slidein">',
+      '  <div class="flex items-center justify-between mb-1">',
+      '    <h2 class="bt-title text-xl font-extrabold glow-cyan">RÉGLAGES</h2>',
+      '    <button id="setClose" class="w-9 h-9 rounded-full glass text-lg">✕</button>',
+      '  </div>',
+
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-4 mb-2">Thème de couleur</p>',
+      '  <div class="flex flex-wrap gap-3">' + swatches + '</div>',
+
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Partager l\'application</p>',
+      '  <div class="glass rounded-2xl p-4 text-center">',
+      '    <div class="bt-logo text-2xl leading-none">DJ BLIND TEST</div>',
+      '    <canvas id="setqr" class="mx-auto rounded-xl bg-white p-2 my-3"></canvas>',
+      '    <div class="text-white/45 text-xs break-all mb-3">' + esc(appUrl) + '</div>',
+      '    <div class="grid grid-cols-2 gap-2">',
+      '      <button id="setShare" class="btn-glow py-2.5 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-bold text-sm">Partager 📤</button>',
+      '      <button id="setCopy" class="py-2.5 rounded-xl glass font-bold text-sm">Copier le lien</button>',
+      '    </div>',
+      '  </div>',
+
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Préférences</p>',
+      '  <div class="glass rounded-2xl px-4">',
+      '    <div class="set-row" style="border-top:none"><span>🔊 Sons</span><button id="tgSound" class="toggle ' + (prefs.muted ? '' : 'on') + '"></button></div>',
+      '    <div class="set-row"><span>📳 Vibrations</span><button id="tgVib" class="toggle ' + (prefs.novib ? '' : 'on') + '"></button></div>',
+      '    <div class="set-row"><span>🎉 Animations &amp; confettis</span><button id="tgAnim" class="toggle ' + (prefs.noanim ? '' : 'on') + '"></button></div>',
+      '  </div>',
+
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Application</p>',
+      '  <div class="grid grid-cols-2 gap-2">',
+           (deferredPrompt ? '<button id="setInstall" class="btn-glow-cyan py-3 rounded-xl bg-neon-cyan text-black font-extrabold text-sm">📲 Installer l\'app</button>' : ''),
+      '    <button id="setFs" class="py-3 rounded-xl glass font-bold text-sm ' + (deferredPrompt ? '' : 'col-span-2') + '">⛶ Plein écran</button>',
+      '  </div>',
+
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Crédits</p>',
+      '  <div class="glass rounded-2xl p-4 text-center text-sm">',
+      '    <div class="text-white/80">Conçu par <span class="font-bold text-neon-cyan">Florian</span></div>',
+      '    <div class="text-white/50">Créateur d\'applications</div>',
+      '    <a href="mailto:archi.tech.fr@gmail.com" class="inline-block mt-2 text-neon-pink font-bold">archi.tech.fr@gmail.com</a>',
+      '    <div class="text-white/30 text-xs mt-3">DJ Blind Test · v1.1 · Synthwave</div>',
+      '  </div>',
+
+      '  <button id="setDone" class="btn-glow w-full mt-5 py-3.5 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">Fermer</button>',
+      '</div>'
+    ].join('');
+    settingsEl.classList.remove('hidden');
+
+    if (window.QRCode) QRCode.toCanvas($('#setqr'), appUrl, { width: 168, margin: 1, color: { dark: '#0b0014', light: '#ffffff' } }, function () {});
+
+    settingsEl.onclick = function (e) { if (e.target === settingsEl) closeSettings(); };
+    bind('#setClose', closeSettings);
+    bind('#setDone', closeSettings);
+
+    Array.prototype.forEach.call(settingsEl.querySelectorAll('.swatch'), function (b) {
+      b.onclick = function () { prefs.theme = b.getAttribute('data-theme'); store.set('theme', prefs.theme); applyPrefs(); openSettings(); };
+    });
+
+    bind('#setCopy', function () { if (navigator.clipboard) navigator.clipboard.writeText(appUrl); toast('Lien copié !', 'ok'); });
+    bind('#setShare', function () {
+      if (navigator.share) navigator.share({ title: 'DJ Blind Test', text: 'Viens jouer au Blind Test musical !', url: appUrl }).catch(function () {});
+      else { if (navigator.clipboard) navigator.clipboard.writeText(appUrl); toast('Lien copié !', 'ok'); }
+    });
+
+    bind('#tgSound', function () { prefs.muted = !prefs.muted; store.set('muted', prefs.muted); if (!prefs.muted) beep(660, 0.08, 'sine'); openSettings(); });
+    bind('#tgVib', function () { prefs.novib = !prefs.novib; store.set('novib', prefs.novib); if (!prefs.novib) vibrate(60); openSettings(); });
+    bind('#tgAnim', function () { prefs.noanim = !prefs.noanim; store.set('noanim', prefs.noanim); applyPrefs(); if (!prefs.noanim) confetti(50); openSettings(); });
+
+    bind('#setInstall', function () { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); } });
+    bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
+  }
+
+  /* --------------------------------------------------------------------------
      8. Démarrage
      -------------------------------------------------------------------------- */
+  applyPrefs(); // applique le thème + préférences enregistrés avant le 1er rendu
+
   /* PWA : service worker (cache + installable plein écran). */
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

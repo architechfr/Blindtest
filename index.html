@@ -349,16 +349,22 @@
 
   /* Comparaison floue réponse <-> morceau (pour la suggestion ✓/✗). */
   function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)/g, ' ').replace(/feat.*$/, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
-  function fuzzyHit(answer, track) {
+  function fuzzyHit(answer, track, mode) {
     if (!track) return null;
     var a = norm(answer); if (!a) return null;
     var title = norm(track.title), artist = norm(track.artist);
     function inc(h, n) { return n && n.length > 1 && h.indexOf(n) >= 0; }
-    if (inc(a, title) || inc(title, a) || inc(a, artist) || inc(artist, a)) return 'ok';
-    var aw = a.split(' ').filter(function (w) { return w.length > 2; });
-    var tw = (title + ' ' + artist).split(' ');
-    var common = aw.filter(function (w) { return tw.indexOf(w) >= 0; }).length;
-    return common >= 1 ? 'ok' : 'ko';
+    function match(field) {
+      if (!field) return false;
+      if (inc(a, field) || inc(field, a)) return true;
+      var aw = a.split(' ').filter(function (w) { return w.length > 2; });
+      var fw = field.split(' ');
+      return aw.filter(function (w) { return fw.indexOf(w) >= 0; }).length >= 1;
+    }
+    var mt = match(title), ma = match(artist);
+    if (mode === 'title') return mt ? 'ok' : 'ko';
+    if (mode === 'artist') return ma ? 'ok' : 'ko';
+    return (mt && ma) ? 'ok' : ((mt || ma) ? 'half' : 'ko'); // both : les deux attendus
   }
 
   /* --------------------------------------------------------------------------
@@ -535,6 +541,9 @@
      -------------------------------------------------------------------------- */
   function renderHome() {
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+    // Reprise rapide : si on a rejoint une partie il y a moins de 4 h, on propose d'y retourner.
+    var lj = store.get('lastJoin', null);
+    if (lj && (Date.now() - (lj.at || 0) > 4 * 3600 * 1000)) lj = null;
     app.innerHTML = [
       '<div class="relative flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
       '  <button id="gear" class="gear glass flex items-center justify-center text-lg" aria-label="Réglages">⚙️</button>',
@@ -542,6 +551,8 @@
       '  <h1 class="bt-logo text-5xl sm:text-6xl text-center leading-none">BLIND<br>TEST</h1>',
       '  <p class="bt-title text-neon-cyan glow-cyan text-center text-sm tracking-[0.45em] mt-3 uppercase">Musical</p>',
       '  <p class="text-white/55 text-center mt-3 mb-8">Buzze, réponds, vote. Le plus rapide gagne. 🏆</p>',
+
+      (lj ? '  <button id="resumeJoin" class="btn-glow-cyan w-full py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-cyan to-neon-lime text-black active:animate-pop mb-3">↩︎ Revenir dans la partie ' + esc(lj.code) + '</button>' : ''),
 
       '  <button id="goHost" class="btn-glow w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-4">',
       '    🎤 Créer une partie</button>',
@@ -566,6 +577,7 @@
       else toast('Menu du navigateur → « Ajouter à l\'écran d\'accueil » pour le plein écran', 'info');
     });
     bind('#scanBtn', openScanner);
+    bind('#resumeJoin', function () { if (lj) { beep(660, 0.1, 'sine'); startPlayer(lj.code, lj.name); } });
     var code = $('#joinCode');
     code.oninput = function () { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
     function join() {
@@ -606,6 +618,16 @@
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Que doit-on trouver ?</p>',
+      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-ans="both">🎵 Titre + Artiste</button>',
+      '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="title">💿 Titre seul</button>',
+      '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="artist">🎤 Artiste seul</button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5">« Titre + Artiste » demande les deux réponses (2 cases) au joueur qui a buzzé.</p>',
+
+      '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>⏱️ Temps de vote des autres joueurs :</span><input id="voteSecs" type="number" min="0" max="60" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Équipes</p>',
       '  <div class="grid grid-cols-4 gap-2 mb-6">' + [0, 2, 3, 4].map(function (n) { return '<button type="button" class="suTeam py-3 rounded-xl text-sm font-bold ' + (n === 0 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
 
@@ -624,7 +646,14 @@
 
     $('#back').onclick = function () { location.hash = ''; };
 
-    var setupMode = 'classic', setupTeams = 0;
+    var setupMode = 'classic', setupTeams = 0, setupAns = 'both';
+    Array.prototype.forEach.call(document.querySelectorAll('.suAns'), function (b) {
+      b.onclick = function () {
+        setupAns = b.getAttribute('data-ans');
+        Array.prototype.forEach.call(document.querySelectorAll('.suAns'), function (x) { x.className = x.className.replace('bg-neon-violet text-white', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll('.suMode'), function (b) {
       b.onclick = function () {
         setupMode = b.getAttribute('data-mode');
@@ -647,12 +676,13 @@
       var cfg = {
         pointsBuzz: parseInt($('#pBuzz').value, 10) || 0,
         pointsVote: parseInt($('#pVote').value, 10) || 0,
-        pointsWrong: parseInt($('#pWrong').value, 10) || 0
+        pointsWrong: parseInt($('#pWrong').value, 10) || 0,
+        voteSecs: Math.max(0, parseInt($('#voteSecs').value, 10) || 0)
       };
       // On enregistre l'état initial puis on bascule sur la route hôte :
       // route() appellera startHost() (entrée unique, refresh-safe).
       var st = initialState(genCode(), hostName, partyName, cfg);
-      st.mode = setupMode; st.teams = setupTeams;
+      st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
       st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
       store.set('hostGame', st);
       location.hash = 'host';
@@ -662,10 +692,11 @@
   function initialState(code, hostName, partyName, cfg) {
     return {
       code: code, hostName: hostName, partyName: partyName, config: cfg,
-      round: 0, phase: 'lobby', theme: '', mode: 'classic', teams: 0,
+      round: 0, phase: 'lobby', theme: '', mode: 'classic', teams: 0, answerMode: 'both',
       source: null, _srcIdx: -1, fredEvery: 10, fredCount: 0, year: null, guesses: {},
       reveal: null, suggest: null,
       buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
+      buzzOpenAt: 0, buzzMs: null, voteAt: 0, tried: [],
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -716,6 +747,7 @@
         // Premier buzz reçu pendant la phase "buzzing" gagne.
         if (state.phase === 'buzzing' && !state.buzzer) {
           if (state.mode === 'fredonne' && state.source && state.source.id === p.id) return; // le fredonneur ne buzze pas
+          if ((state.tried || []).indexOf(p.id) >= 0) return;                                 // déjà tenté sur cette manche
           var pl = ensurePlayer(p.id, p.name);
           state.buzzer = { id: pl.id, name: pl.name };
           state.phase = 'answering';
@@ -726,8 +758,11 @@
       } else if (p.action === 'answer') {
         if (state.phase === 'answering' && state.buzzer && state.buzzer.id === p.id) {
           state.answer = String(p.text || '').slice(0, 120);
-          state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack) : null;
+          // Chrono : temps entre l'ouverture du buzz et la réponse envoyée (info pour le DJ).
+          if (state.buzzOpenAt) state.buzzMs = Date.now() - state.buzzOpenAt;
+          state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, state.answerMode) : null;
           state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
+          state.voteAt = Date.now(); // départ du temps de vote des autres joueurs
           beep(520, 0.12, 'sine');
           publish();
         }
@@ -769,6 +804,7 @@
     function resetRound() {
       state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
       state.reveal = null; state.suggest = null;
+      state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
     }
     function armBuzz() {
       state.phase = 'armed';
@@ -776,7 +812,7 @@
       publish();
       setTimeout(function () {
         if (state.phase === 'armed') {
-          state.phase = 'buzzing'; beep(740, 0.12, 'sine');
+          state.phase = 'buzzing'; state.buzzOpenAt = Date.now(); beep(740, 0.12, 'sine');
           if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
           publish();
         }
@@ -812,7 +848,9 @@
     function hostAnswer(text) {
       if (state.phase === 'answering' && state.buzzer && state.buzzer.id === ME) {
         state.answer = String(text || '').slice(0, 120);
+        if (state.buzzOpenAt) state.buzzMs = Date.now() - state.buzzOpenAt;
         state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
+        state.voteAt = Date.now();
         publish();
       }
     }
@@ -846,7 +884,15 @@
       });
       state.result = { correct: correct };
       dzPause();
-      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      // Reste-t-il quelqu'un qui pourrait rebondir ? (si oui et réponse fausse, on ne révèle pas encore)
+      var triedNow = (state.tried || []).concat(state.buzzer ? [state.buzzer.id] : []);
+      var candidates = Object.keys(state.players).filter(function (id) {
+        if (triedNow.indexOf(id) >= 0) return false;
+        if (state.mode === 'fredonne' && state.source && state.source.id === id) return false;
+        return true;
+      });
+      var canRebound = !correct && candidates.length > 0;
+      if (roundTrack && !canRebound) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
       state.phase = 'reveal';
       state.history.push({
         round: state.round, buzzer: state.buzzer, answer: state.answer,
@@ -854,6 +900,20 @@
       });
       beep(correct ? 880 : 160, 0.3, correct ? 'sine' : 'sawtooth');
       if (correct) confetti(150);
+      publish();
+    }
+    /* Rebond : après une mauvaise réponse, on rouvre le buzz aux AUTRES joueurs
+       (celui qui vient de se tromper ne peut pas retenter). Le 1er à répondre juste marque. */
+    function reopenBuzz() {
+      var prev = (state.buzzer && state.buzzer.id) || null;
+      var tried = state.tried || [];
+      if (prev && tried.indexOf(prev) < 0) tried.push(prev);
+      state.tried = tried;
+      state.buzzer = null; state.answer = null; state.votes = {}; state.result = null;
+      state.suggest = null; state.buzzMs = null; state.voteAt = 0;
+      state.phase = 'buzzing'; state.buzzOpenAt = Date.now();
+      if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
+      beep(740, 0.12, 'sine');
       publish();
     }
     function endGame() { dzPause(); state.phase = 'ended'; confetti(240); publish(); }
@@ -922,8 +982,47 @@
       if (initQ) { render(null, initQ, true); deezerSearch(initQ, function (res) { lastResults = res || []; render(lastResults, initQ, false); }); }
     }
 
+    /* Panneau « Inviter / faire revenir un joueur » — accessible à TOUT MOMENT.
+       Corrige le cas vécu : un joueur perdu en pleine partie et aucun moyen de le récupérer. */
+    function openInvite() {
+      var el = document.getElementById('picker'); if (!el) return;
+      var origin2 = location.origin + location.pathname;
+      var url = origin2 + '#join=' + state.code;
+      var present2 = state._present || {};
+      var away = leaderboardArr(state.players).filter(function (p) { return !present2[p.id]; });
+      el.innerHTML = [
+        '<div class="set-panel p-5 text-center animate-slidein">',
+        '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">INVITER / REVENIR</h2><button id="ivClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+        '  <p class="text-white/60 text-sm mb-3">Fais scanner ce QR (ou donne le code) pour rejoindre — même en pleine partie. Les points sont conservés.</p>',
+        '  <div class="text-4xl font-extrabold tracking-[0.35em] text-neon-cyan mb-3">' + esc(state.code) + '</div>',
+        '  <canvas id="ivqr" class="mx-auto rounded-xl bg-white p-2"></canvas>',
+        '  <div class="grid grid-cols-2 gap-2 mt-4">',
+        '    <button id="ivShare" class="btn-glow py-2.5 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-bold text-sm">Partager 📤</button>',
+        '    <button id="ivCopy" class="py-2.5 rounded-xl glass font-bold text-sm">Copier le lien</button>',
+        '  </div>',
+        (away.length
+          ? '  <div class="mt-5 text-left"><p class="text-xs font-bold uppercase text-white/50 mb-2">Joueurs déconnectés</p>'
+            + away.map(function (p) { return '<div class="flex items-center gap-2 rounded-xl px-3 py-2 bg-black/25 mb-2"><span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-extrabold" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</span><span class="flex-1 font-bold text-sm truncate">' + esc(p.name) + '</span><span class="text-neon-gold font-extrabold">' + p.score + '</span></div>'; }).join('')
+            + '<p class="text-white/40 text-xs">Ils gardent leur score : qu\'ils rescannent le QR avec le même pseudo pour reprendre leur place.</p></div>'
+          : '  <p class="text-white/40 text-xs mt-4">Tous les joueurs sont connectés ✓</p>'),
+        '</div>'
+      ].join('');
+      el.classList.remove('hidden');
+      el.onclick = function (e) { if (e.target === el) closePicker(); };
+      if (window.QRCode) QRCode.toCanvas($('#ivqr'), url, { width: 168, margin: 1, color: { dark: '#0b0014', light: '#ffffff' } }, function () {});
+      bind('#ivClose', closePicker);
+      bind('#ivCopy', function () { if (navigator.clipboard) navigator.clipboard.writeText(url); toast('Lien copié !', 'ok'); });
+      bind('#ivShare', function () {
+        if (navigator.share) navigator.share({ title: 'Blind Test', text: 'Rejoins la partie (code ' + state.code + ')', url: url }).catch(function () {});
+        else { if (navigator.clipboard) navigator.clipboard.writeText(url); toast('Lien copié !', 'ok'); }
+      });
+    }
+
+    // Rafraîchit l'écran hôte chaque seconde pendant le vote (compte à rebours vivant).
+    var voteTick = setInterval(function () { if (state.phase === 'voting') renderHost(); }, 1000);
+
     current = {
-      destroy: function () { if (chan) chan.close(); dzPause(); }
+      destroy: function () { if (chan) chan.close(); dzPause(); clearInterval(voteTick); }
     };
 
     /* --- Rendu de l'écran hôte --- */
@@ -1021,16 +1120,26 @@
         }
       } else if (s.phase === 'voting') {
         var t = tallyVotes();
+        // Temps laissé aux autres joueurs pour voter avant que le DJ tranche.
+        var voteSecs = (s.config && s.config.voteSecs) || 10;
+        var left = s.voteAt ? Math.max(0, Math.ceil((s.voteAt + voteSecs * 1000 - Date.now()) / 1000)) : 0;
+        var expected = Math.max(0, lb.length - 1); // tout le monde sauf celui qui a buzzé
+        var allVoted = expected > 0 && (t.up + t.down) >= expected;
+        var canDecide = (left === 0) || allVoted;
         phaseBlock = [
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
-          '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + '</p>',
+          '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + (s.buzzMs != null ? ' · ⏱️ ' + (s.buzzMs / 1000).toFixed(1) + ' s' : '') + '</p>',
           '  <div class="text-3xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-xl">(réponse orale)</span>') + '</div>',
-          (s.suggest ? '  <p class="text-sm font-bold mb-1 ' + (s.suggest === 'ok' ? 'text-neon-lime' : 'text-rose-400') + '">💡 Suggestion : ' + (s.suggest === 'ok' ? '✓ probablement correct' : '✗ probablement faux') + '</p>' : ''),
-          '  <div class="flex justify-center gap-6 text-xl my-4"><span>👍 ' + t.up + '</span><span>👎 ' + t.down + '</span></div>',
-          '  <div class="grid grid-cols-2 gap-3">',
+          (s.suggest ? '  <p class="text-sm font-bold mb-1 ' + (s.suggest === 'ok' ? 'text-neon-lime' : s.suggest === 'half' ? 'text-neon-gold' : 'text-rose-400') + '">💡 Suggestion : ' + (s.suggest === 'ok' ? '✓ probablement correct' : s.suggest === 'half' ? '≈ à moitié (une seule des deux)' : '✗ probablement faux') + '</p>' : ''),
+          '  <div class="flex justify-center gap-6 text-xl my-4"><span>👍 ' + t.up + '</span><span>👎 ' + t.down + '</span><span class="text-white/40 text-sm self-center">' + (t.up + t.down) + '/' + expected + ' votes</span></div>',
+          (canDecide
+            ? '  <p class="text-neon-lime text-sm font-bold mb-2">' + (allVoted ? 'Tout le monde a voté ✓' : 'Temps de vote écoulé') + '</p>'
+            : '  <div class="mb-3"><div class="text-4xl font-extrabold text-neon-cyan glow-cyan">' + left + '</div><p class="text-white/50 text-xs">temps de vote… laisse les autres répondre</p></div>'),
+          '  <div class="grid grid-cols-2 gap-3 ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">',
           '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
           '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
           '  </div>',
+          (canDecide ? '' : '  <button id="skipWait" class="mt-3 text-white/40 text-xs underline">Trancher maintenant</button>'),
           '</div>'
         ].join('');
       } else if (s.phase === 'judging') {
@@ -1083,7 +1192,10 @@
           '  <p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
           '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + (s.result.correct ? ' +' + s.config.pointsBuzz : ' ' + (s.config.pointsWrong >= 0 ? '+' : '') + s.config.pointsWrong) + ' pts</p>',
                revealCard(s.reveal),
-          '  <div class="grid grid-cols-2 gap-3 mt-6">',
+          (!s.result.correct && !s.reveal
+            ? '  <button id="reopen" class="mt-5 w-full py-3.5 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">🔔 Rebond : rouvrir le buzz aux autres</button>'
+            : ''),
+          '  <div class="grid grid-cols-2 gap-3 mt-3">',
           '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
           '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
           '  </div>',
@@ -1108,7 +1220,8 @@
         '<div class="flex-1 flex flex-col px-5 py-6 max-w-lg mx-auto w-full">',
         '  <div class="flex items-center justify-between mb-4">',
         '    <div class="min-w-0"><div class="text-xs text-white/40 uppercase tracking-wide">Hôte · ' + esc(s.hostName) + '</div><div class="text-xl font-extrabold truncate">' + esc(s.partyName) + '</div></div>',
-        '    <div class="flex items-center gap-3 shrink-0">',
+        '    <div class="flex items-center gap-2 shrink-0">',
+        '      <button id="inviteBtn" class="w-10 h-10 rounded-full glass flex items-center justify-center text-lg" aria-label="Inviter / faire revenir un joueur">📲</button>',
         '      <button id="gear" class="w-10 h-10 rounded-full glass flex items-center justify-center text-lg" aria-label="Réglages">⚙️</button>',
         '      <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
         '    </div>',
@@ -1134,14 +1247,17 @@
         if (copy) copy.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(joinUrl); toast('Lien copié !', 'ok'); };
         var l = $('#launch'); if (l) l.onclick = function () { if (Object.keys(s.players).length) launchRound(); else toast('Aucun joueur connecté', 'err'); };
       }
-      bind('#forceVote', function () { s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; publish(); });
+      bind('#forceVote', function () { if (s.buzzOpenAt) s.buzzMs = Date.now() - s.buzzOpenAt; s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; s.voteAt = Date.now(); publish(); });
       bind('#ok', function () { validate(true); });
       bind('#ko', function () { validate(false); });
+      bind('#reopen', reopenBuzz);
+      bind('#skipWait', function () { s.voteAt = Date.now() - ((s.config && s.config.voteSecs || 10) * 1000); renderHost(); });
       bind('#next', launchRound);
       bind('#end', endGame);
       bind('#replay', replay);
       bind('#export', function () { exportLeaderboard(s); });
       bind('#gear', openSettings);
+      bind('#inviteBtn', openInvite);
       bind('#hostBuzz', hostBuzz);
       var hAns = $('#hostAns'); if (hAns) hAns.focus();
       bind('#hostSend', function () { var e = $('#hostAns'); hostAnswer(e ? e.value.trim() : ''); });
@@ -1184,6 +1300,7 @@
       var name = $('#pname').value.trim();
       if (!name) { toast('Choisis un pseudo', 'err'); vibrate(80); return; }
       store.set('playerName', name);
+      store.set('lastJoin', { code: code, name: name, at: Date.now() }); // permet de revenir en 1 clic
       beep(660, 0.1, 'sine'); // débloque l'audio iOS via interaction
       startPlayer(code, name);
     }
@@ -1232,6 +1349,7 @@
       var lb = leaderboardArr(s.players);
       var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
       var isBuzzer = s.buzzer && s.buzzer.id === ME;
+      var am = s.answerMode || 'both'; // both | title | artist
       var isSource = s.source && s.source.id === ME;
 
       var center = '';
@@ -1250,8 +1368,11 @@
           center = [
             '<div class="w-full animate-slidein text-center">',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
-            '  <p class="text-white/60 mb-4">Écris ta réponse</p>',
-            '  <input id="ans" maxlength="120" placeholder="Titre / artiste…" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />',
+            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'artist' ? 'Nomme l\'artiste' : 'Donne le titre') + '</p>',
+            (am === 'both'
+              ? '  <input id="ansTitle" maxlength="80" placeholder="💿 Titre…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
+                + '<input id="ansArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-4" />'
+              : '  <input id="ans" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />'),
             '  <button id="send" class="w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider ma réponse</button>',
             '  <button id="oral" class="mt-3 text-white/40 text-sm">Je réponds à l\'oral</button>',
             '</div>'
@@ -1325,7 +1446,9 @@
         '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
         (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
-        (s.theme && s.phase !== 'ended' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span></div>' : ''),
+        (s.phase !== 'ended' && s.mode !== 'year' ? '  <div class="text-center mt-1 flex flex-wrap justify-center gap-2">'
+          + (s.theme ? '<span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span>' : '')
+          + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
         '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME) + '</div>',
         '  <button id="leave" class="mt-3 text-white/40 text-sm">Quitter</button>',
@@ -1335,12 +1458,19 @@
       // Liaisons d'événements
       bind('#leave', function () { location.hash = ''; });
       bind('#gear', openSettings);
-      var ans = $('#ans');
-      if (ans) {
-        ans.focus();
+      var ans = $('#ans'), ansT = $('#ansTitle'), ansA = $('#ansArtist');
+      if (ans || ansT) {
+        (ansT || ans).focus();
         var sendAnswer = function (txt) { answered = true; chan.sendIntent({ action: 'answer', id: ME, text: txt }); beep(520, 0.1, 'sine'); renderPlayer(); };
-        bind('#send', function () { sendAnswer(ans.value.trim()); });
-        ans.onkeydown = function (e) { if (e.key === 'Enter') sendAnswer(ans.value.trim()); };
+        var collect = function () {
+          if (ansT || ansA) {
+            var ti = (ansT && ansT.value.trim()) || '', ar = (ansA && ansA.value.trim()) || '';
+            return (ti && ar) ? (ti + ' — ' + ar) : (ti || ar);
+          }
+          return ans ? ans.value.trim() : '';
+        };
+        bind('#send', function () { sendAnswer(collect()); });
+        [ans, ansT, ansA].forEach(function (el) { if (el) el.onkeydown = function (e) { if (e.key === 'Enter') sendAnswer(collect()); }; });
         bind('#oral', function () { sendAnswer(''); });
       }
       bind('#up', function () { voted = true; chan.sendIntent({ action: 'vote', id: ME, value: 1 }); beep(880, 0.08, 'sine'); renderPlayer(); });

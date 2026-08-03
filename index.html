@@ -372,7 +372,13 @@
   function deezerTrack(id, cb) { jsonp('https://api.deezer.com/track/' + id, function (d) { cb(d || null); }); }
 
   var dzAudio = document.getElementById('dzaudio');
-  function dzPlay(url) { if (!dzAudio || !url) return; try { if (dzAudio.src !== url) dzAudio.src = url; dzAudio.currentTime = 0; dzAudio.play().catch(function () {}); } catch (e) {} }
+  function dzPlay(url) {
+    // Si le DJ joue depuis Spotify/YT Music/etc., on ne lance surtout pas l'extrait
+    // Deezer par-dessus : la fiche du morceau sert seulement au reveal et à la correction.
+    if (!platform().plays) return;
+    if (!dzAudio || !url) return;
+    try { if (dzAudio.src !== url) dzAudio.src = url; dzAudio.currentTime = 0; dzAudio.play().catch(function () {}); } catch (e) {}
+  }
   function dzResume() { if (dzAudio) dzAudio.play().catch(function () {}); }
   function dzPause() { if (dzAudio) try { dzAudio.pause(); } catch (e) {} }
 
@@ -1174,17 +1180,20 @@
             return '<div class="dz-card mb-2">'
               + '<img src="' + esc(cover) + '" alt="" />'
               + '<div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(t.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(t.artist ? t.artist.name : '') + '</div></div>'
-              + '<button class="dzPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">▶</button>'
-              + '<button class="dzPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">Choisir</button>'
+              + (platform().plays
+                  ? '<button class="dzPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '" title="Pré-écouter">▶</button>'
+                  : '<button class="dzOpen px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '" title="Ouvrir dans ' + esc(platform().name) + '">' + platform().icon + '↗</button>')
+              + '<button class="dzPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">' + (platform().plays ? 'Choisir' : 'Valider') + '</button>'
               + '</div>';
           }).join('');
         } else if (results) list = '<p class="text-white/40 text-center py-6">Aucun résultat.</p>';
         pickerEl.innerHTML = [
           '<div class="set-panel p-5 animate-slidein">',
-          '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">CHOISIR UN MORCEAU</h2><button id="dzClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+          '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">' + (platform().plays ? 'CHOISIR UN MORCEAU' : 'QUEL EST CE TITRE ?') + '</h2><button id="dzClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+          (platform().plays ? '' : '  <p class="text-white/50 text-xs mb-2">Cherche le titre que tu vas lancer sur ' + esc(platform().name) + ' : il restera caché et servira à la révélation + correction auto.</p>'),
           '  <div class="flex gap-2 mb-3"><input id="dzq" value="' + esc(q || '') + '" placeholder="Titre ou artiste…" class="flex-1 bg-black/40 rounded-xl px-4 py-3 outline-none focus:ring-2 ring-neon-cyan" /><button id="dzgo" class="px-4 rounded-xl bg-neon-cyan text-black font-extrabold">🔎</button></div>',
           '  <div id="dzlist" class="overflow-y-auto" style="max-height:55dvh">' + list + '</div>',
-          '  <p class="text-white/30 text-xs text-center mt-3">Extraits 30 s via Deezer · joués sur cet appareil</p>',
+          '  <p class="text-white/30 text-xs text-center mt-3">' + (platform().plays ? 'Extraits 30 s via Deezer · joués sur cet appareil' : 'Fiches via Deezer · l\'audio vient de ' + esc(platform().name)) + '</p>',
           '</div>'
         ].join('');
         pickerEl.classList.remove('hidden');
@@ -1194,6 +1203,14 @@
         bind('#dzgo', go);
         var qi = $('#dzq'); if (qi) qi.onkeydown = function (e) { if (e.key === 'Enter') go(); };
         Array.prototype.forEach.call(pickerEl.querySelectorAll('.dzPrev'), function (b) { b.onclick = function () { var t = lastResults[+b.getAttribute('data-i')]; if (t) dzPlay(t.preview); }; });
+        // Ouvre le morceau dans la plateforme du DJ (Spotify, YT Music…) pour qu'il le lance sur l'enceinte.
+        Array.prototype.forEach.call(pickerEl.querySelectorAll('.dzOpen'), function (b) {
+          b.onclick = function () {
+            var t = lastResults[+b.getAttribute('data-i')]; if (!t) return;
+            var p = platform(); if (!p.url) { toast('Lance-le depuis ton appli 🎵', 'info'); return; }
+            window.open(p.url(t.title + ' ' + (t.artist ? t.artist.name : '')), '_blank', 'noopener');
+          };
+        });
         Array.prototype.forEach.call(pickerEl.querySelectorAll('.dzPick'), function (b) {
           b.onclick = function () {
             var t = lastResults[+b.getAttribute('data-i')]; if (!t) return;
@@ -1304,12 +1321,14 @@
       var prepPhase = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal' || s.phase === 'turbo_reveal');
       var dzBar = '';
       if (deezerOn && prepPhase) {
+        var plays = platform().plays;
         dzBar = '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
-          ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">🔒 Morceau prêt (caché)</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
-          : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 Choisir un morceau (Deezer)</button>') + '</div>';
+          ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">🔒 Réponse enregistrée (cachée)</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
+          : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 ' + (plays ? 'Choisir un morceau (Deezer)' : 'Enregistrer la réponse du titre') + '</button>'
+            + (plays ? '' : '<p class="text-white/40 text-xs mt-2 text-center">Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.</p>')) + '</div>';
       }
       var dzCtrl = '';
-      if (deezerOn && roundTrack && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess' || s.phase === 'racing' || s.phase === 'grading')) {
+      if (deezerOn && platform().plays && roundTrack && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess' || s.phase === 'racing' || s.phase === 'grading')) {
         dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
           + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'
           + '<button id="dzReplay" class="px-3 py-2 rounded-lg glass text-sm">🔁 Rejouer</button>'
@@ -2132,8 +2151,23 @@
     novib: store.get('novib', false),
     noanim: store.get('noanim', false),
     deezer: store.get('deezer', true),
-    eco: store.get('eco', false)
+    eco: store.get('eco', false),
+    platform: store.get('platform', 'deezer') // deezer | spotify | ytmusic | apple | amazon | other
   };
+
+  /* Plateformes musicales : l'audio sort de TON appli habituelle (sur l'enceinte),
+     et Blind Test sert à enregistrer la fiche du morceau (pochette/titre/année)
+     pour le reveal et l'auto-correction. Deezer est la seule qui peut aussi
+     jouer l'extrait directement dans l'app (30 s, sans compte). */
+  var PLATFORMS = {
+    deezer:  { name: 'Deezer',        icon: '🎧', plays: true,  url: function (q) { return 'https://www.deezer.com/search/' + encodeURIComponent(q); } },
+    spotify: { name: 'Spotify',       icon: '🟢', plays: false, url: function (q) { return 'https://open.spotify.com/search/' + encodeURIComponent(q); } },
+    ytmusic: { name: 'YouTube Music', icon: '🔴', plays: false, url: function (q) { return 'https://music.youtube.com/search?q=' + encodeURIComponent(q); } },
+    apple:   { name: 'Apple Music',   icon: '🍎', plays: false, url: function (q) { return 'https://music.apple.com/search?term=' + encodeURIComponent(q); } },
+    amazon:  { name: 'Amazon Music',  icon: '🔵', plays: false, url: function (q) { return 'https://music.amazon.fr/search/' + encodeURIComponent(q); } },
+    other:   { name: 'Autre / vinyle',icon: '📻', plays: false, url: null }
+  };
+  function platform() { return PLATFORMS[prefs.platform] || PLATFORMS.deezer; }
   function applyPrefs() {
     document.body.setAttribute('data-theme', prefs.theme || 'synthwave');
     document.body.classList.toggle('bt-no-anim', !!prefs.noanim);
@@ -2212,12 +2246,20 @@
       '    </div>',
       '  </div>',
 
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">🎵 Ma plateforme musicale</p>',
+      '  <div class="grid grid-cols-3 gap-2">' + Object.keys(PLATFORMS).map(function (k) {
+           return '<button class="platBtn py-2.5 rounded-xl text-xs font-bold ' + (prefs.platform === k ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '" data-plat="' + k + '">' + PLATFORMS[k].icon + ' ' + esc(PLATFORMS[k].name) + '</button>';
+         }).join('') + '</div>',
+      '  <p class="text-white/40 text-xs mt-2 mb-1">' + (platform().plays
+           ? 'Deezer joue les extraits (30 s) directement dans l\'app.'
+           : 'Tu lances la musique depuis ' + esc(platform().name) + ' sur ton enceinte. Blind Test sert à enregistrer la réponse (pochette, titre, année) pour la révélation et la correction automatique.') + '</p>',
+
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Préférences</p>',
       '  <div class="glass rounded-2xl px-4">',
       '    <div class="set-row" style="border-top:none"><span>🔊 Sons</span><button id="tgSound" class="toggle ' + (prefs.muted ? '' : 'on') + '"></button></div>',
       '    <div class="set-row"><span>📳 Vibrations</span><button id="tgVib" class="toggle ' + (prefs.novib ? '' : 'on') + '"></button></div>',
       '    <div class="set-row"><span>🎉 Animations &amp; confettis</span><button id="tgAnim" class="toggle ' + (prefs.noanim ? '' : 'on') + '"></button></div>',
-      '    <div class="set-row"><span>🎵 Lecteur Deezer intégré</span><button id="tgDeezer" class="toggle ' + (prefs.deezer ? 'on' : '') + '"></button></div>',
+      '    <div class="set-row"><span>💿 Fiche du morceau<span class="block text-xs text-white/40">révélation + correction auto</span></span><button id="tgDeezer" class="toggle ' + (prefs.deezer ? 'on' : '') + '"></button></div>',
       '    <div class="set-row"><span>🔋 Économie de batterie<span class="block text-xs text-white/40">coupe les animations lourdes</span></span><button id="tgEco" class="toggle ' + (prefs.eco ? 'on' : '') + '"></button></div>',
       '  </div>',
 
@@ -2267,6 +2309,9 @@
     bind('#tgAnim', function () { prefs.noanim = !prefs.noanim; store.set('noanim', prefs.noanim); applyPrefs(); if (!prefs.noanim) confetti(50); openSettings(); });
     bind('#tgDeezer', function () { prefs.deezer = !prefs.deezer; store.set('deezer', prefs.deezer); openSettings(); });
     bind('#tgEco', function () { prefs.eco = !prefs.eco; store.set('eco', prefs.eco); store.set('ecoSet', true); applyPrefs(); openSettings(); });
+    Array.prototype.forEach.call(settingsEl.querySelectorAll('.platBtn'), function (b) {
+      b.onclick = function () { prefs.platform = b.getAttribute('data-plat'); store.set('platform', prefs.platform); openSettings(); };
+    });
 
     bind('#setInstall', function () { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); } });
     bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });

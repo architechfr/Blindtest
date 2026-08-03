@@ -756,10 +756,20 @@
     }
     function ensurePlayer(id, name) {
       if (!state.players[id]) {
-        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null };
+        // ord = ordre d'arrivée, FIXE. Sert aux rotations (DJ, fredonneur) :
+        // on ne doit JAMAIS se baser sur le classement, qui bouge à chaque point.
+        var maxOrd = -1;
+        Object.keys(state.players).forEach(function (k) { if (typeof state.players[k].ord === 'number' && state.players[k].ord > maxOrd) maxOrd = state.players[k].ord; });
+        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null, ord: maxOrd + 1 };
         if (state.teams) assignTeam(state.players[id]);
       } else if (name) state.players[id].name = name;
       return state.players[id];
+    }
+    /* Ordre STABLE (arrivée) pour les rotations — à ne pas confondre avec le classement. */
+    function rotationArr() {
+      return Object.keys(state.players)
+        .map(function (k) { return state.players[k]; })
+        .sort(function (a, b) { return (a.ord || 0) - (b.ord || 0); });
     }
 
     /* Réception des intentions joueurs */
@@ -807,10 +817,22 @@
           publish();
         }
       } else if (p.action === 'judge') {
-        // Fredonne : le fredonneur (source) tranche.
-        if (state.phase === 'judging' && state.source && state.source.id === p.id) {
-          validate(p.correct === true);
+        // Le fredonneur (mode Fredonne) OU le DJ de la série tranche depuis son téléphone.
+        var isSource = state.source && state.source.id === p.id;
+        var isDJ = state.dj && state.dj.id === p.id;
+        if ((state.phase === 'judging' || state.phase === 'voting') && (isSource || isDJ)) {
+          validate(p.correct === true, p.partial === true);
         }
+      } else if (p.action === 'grade') {
+        // Mode Turbo : le DJ corrige une réponse depuis son téléphone.
+        if (state.phase === 'grading' && state.dj && state.dj.id === p.id && p.target) {
+          state.grades[p.target] = p.g;
+          publish();
+        }
+      } else if (p.action === 'closeRace') {
+        if (state.phase === 'racing' && state.dj && state.dj.id === p.id) closeRacing();
+      } else if (p.action === 'applyTurbo') {
+        if (state.phase === 'grading' && state.dj && state.dj.id === p.id) applyTurbo();
       } else if (p.action === 'guess') {
         // Devine l'année : un joueur propose une année.
         if (state.phase === 'year_guess') {
@@ -822,6 +844,10 @@
         publish();
       }
     }
+
+    /* L'hôte fait partie des joueurs dès qu'il y a rotation DJ ou mode Fredonne :
+       il joue comme les autres, sauf sur les manches où c'est lui le DJ / le fredonneur. */
+    if (state.djRotate || state.mode === 'fredonne') ensurePlayer(ME, state.hostName);
 
     var chan = openChannel(code, { id: ME, name: state.hostName, role: 'host' }, {
       onIntent: onIntent,
@@ -860,7 +886,7 @@
       /* Rotation du DJ : tous les N titres, un joueur différent prend les commandes.
          Le DJ choisit le morceau → il connaît la réponse → il ne marque pas ce tour-ci. */
       if (state.djRotate) {
-        var dids = leaderboardArr(state.players).map(function (p) { return p.id; });
+        var dids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
         if (dids.length) {
           var dEvery = state.djEvery || 5;
           if (!state.dj || (state.djCount % dEvery === 0)) state._djIdx = state._djIdx + 1;
@@ -877,7 +903,7 @@
         beep(740, 0.12, 'sine'); publish(); return;
       }
       if (state.mode === 'fredonne') {
-        var ids = leaderboardArr(state.players).map(function (p) { return p.id; });
+        var ids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
         if (!ids.length) { toast('Aucun joueur pour fredonner', 'err'); state.round -= 1; state.phase = 'lobby'; publish(); return; }
         var every = state.fredEvery || 10;
         // On change de fredonneur seulement tous les "every" morceaux.
@@ -1196,6 +1222,7 @@
           '  <button id="copyLink" class="mt-4 text-sm text-white/60 underline">Copier le lien d\'invitation</button>',
           '  <div class="mt-6 flex items-center justify-center gap-2 text-white/80 font-bold"><span class="text-2xl">👥</span> ' + nb + ' joueur' + (nb > 1 ? 's' : '') + ' dans le salon</div>',
              chips,
+          (s.djRotate && nb ? '  <p class="mt-4 text-sm text-neon-cyan font-bold">🎧 Premier DJ : ' + esc((rotationArr()[0] || {}).name || '') + ' (puis rotation tous les ' + (s.djEvery || 5) + ' titres)</p>' : ''),
           '  <button id="launch" class="mt-6 w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop ' + (nb ? '' : 'opacity-50 pointer-events-none') + '">Lancer la manche ' + (s.round + 1) + ' ' + modeIcon + '</button>',
           '</div>'
         ].join('');
@@ -1274,9 +1301,9 @@
                    + '<span class="text-neon-cyan text-xs font-bold">' + (i === 0 ? '⚡ ' : '') + (a.ms / 1000).toFixed(1) + 's</span></div>'
                    + '<div class="text-white/80 text-sm mb-2 truncate">' + (a.text ? '« ' + esc(a.text) + ' »' : '<span class="text-white/30">(vide)</span>') + '</div>'
                    + '<div class="grid grid-cols-3 gap-1">'
-                   + '<button class="gradeBtn py-1.5 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓</button>'
-                   + '<button class="gradeBtn py-1.5 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈</button>'
-                   + '<button class="gradeBtn py-1.5 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗</button>'
+                   + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓ Tout bon</button>'
+                   + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈ À moitié</button>'
+                   + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗ Faux</button>'
                    + '</div></div>';
                }).join('') : '<p class="text-white/40 text-center py-4">Personne n\'a répondu.</p>'),
           '  <button id="applyTurbo" class="mt-3 w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Attribuer les points 🏅</button>',
@@ -1523,15 +1550,43 @@
       var center = '';
       // Si je suis le DJ de la série, je ne joue pas : je choisis les morceaux.
       if (imDJ && s.phase !== 'lobby' && s.phase !== 'ended') {
-        center = [
-          '<div class="text-center animate-slidein">',
-          '  <div class="text-6xl mb-3 animate-float">🎧</div>',
-          '  <p class="text-2xl font-extrabold text-neon-cyan glow-cyan">C\'EST TOI LE DJ !</p>',
-          '  <p class="text-white/60 mt-2">Tu choisis les morceaux de cette série.</p>',
-          '  <p class="text-white/40 text-sm mt-1">Titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' · tu ne marques pas de points sur ta série</p>',
-          (s.reveal ? revealCard(s.reveal) : ''),
-          '</div>'
-        ].join('');
+        var djHdr = '<div class="text-center mb-4"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' de ta série</p></div>';
+        if (s.phase === 'racing') {
+          var gotD = Object.keys(s.answers || {}).length;
+          center = '<div class="w-full animate-slidein">' + djHdr
+            + '<p class="text-center text-white/60 mb-2">Lance ton morceau 🎵</p>'
+            + '<div class="text-center text-3xl font-extrabold text-neon-cyan">' + gotD + '</div><p class="text-center text-white/40 text-xs mb-4">réponses reçues</p>'
+            + '<button id="djCloseRace" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">Clore et corriger ✍️</button></div>';
+        } else if (s.phase === 'grading') {
+          var ordD = Object.keys(s.answers || {}).sort(function (a, b) { return s.answers[a].ms - s.answers[b].ms; });
+          center = '<div class="w-full animate-slidein">' + djHdr
+            + '<p class="text-center text-white/50 text-xs mb-3">Tu sais ce que tu as mis : corrige chaque réponse</p>'
+            + (ordD.length ? ordD.map(function (id, i) {
+                var a = s.answers[id], g = s.grades[id];
+                return '<div class="rounded-xl bg-black/25 p-3 mb-2">'
+                  + '<div class="flex items-center gap-2 mb-1"><span class="font-bold text-sm flex-1 truncate">' + esc(a.name) + '</span><span class="text-neon-cyan text-xs font-bold">' + (i === 0 ? '⚡ ' : '') + (a.ms / 1000).toFixed(1) + 's</span></div>'
+                  + '<div class="text-white/80 text-sm mb-2 truncate">' + (a.text ? '« ' + esc(a.text) + ' »' : '<span class="text-white/30">(vide)</span>') + '</div>'
+                  + '<div class="grid grid-cols-3 gap-1">'
+                  + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓ Tout bon</button>'
+                  + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈ À moitié</button>'
+                  + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗ Faux</button>'
+                  + '</div></div>';
+              }).join('') : '<p class="text-white/40 text-center py-3">Personne n\'a répondu.</p>')
+            + '<button id="djApply" class="mt-2 w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Attribuer les points 🏅</button></div>';
+        } else if (s.phase === 'voting' || s.phase === 'judging') {
+          center = '<div class="w-full text-center animate-slidein">' + djHdr
+            + '<p class="text-white/50 uppercase text-xs">Réponse de ' + esc(s.buzzer ? s.buzzer.name : '') + (s.buzzMs != null ? ' · ⏱️ ' + (s.buzzMs / 1000).toFixed(1) + 's' : '') + '</p>'
+            + '<div class="text-2xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-lg">(à l\'oral)</span>') + '</div>'
+            + '<div class="grid grid-cols-2 gap-3"><button id="djOk" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>'
+            + '<button id="djKo" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button></div>'
+            + (am === 'both' ? '<button id="djHalf" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">≈ À moitié (titre OU artiste)</button>' : '')
+            + '</div>';
+        } else {
+          center = '<div class="text-center animate-slidein">' + djHdr
+            + '<p class="text-white/60 mt-2">Choisis et lance ton morceau 🎵</p>'
+            + '<p class="text-white/40 text-sm mt-1">Tu ne marques pas de points sur ta série</p>'
+            + (s.reveal ? revealCard(s.reveal) : '') + '</div>';
+        }
       } else if (s.phase === 'lobby') {
         center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-float">🍿</div><p class="text-xl font-bold">En attente du lancement…</p><p class="text-white/50 mt-1">L\'hôte va démarrer la partie</p></div>';
       } else if (s.phase === 'racing') {
@@ -1547,6 +1602,7 @@
                 + '<input id="raceArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-3" />'
               : '  <input id="raceOne" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />'),
             '  <button id="raceSend" class="btn-glow w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Envoyer ⚡</button>',
+            '  <button id="racePass" class="mt-3 w-full py-3 rounded-xl glass font-bold text-sm">🤷 Je ne sais pas — je passe</button>',
             '</div>'
           ].join('');
       } else if (s.phase === 'grading') {
@@ -1669,6 +1725,16 @@
       // Liaisons d'événements
       bind('#leave', function () { location.hash = ''; });
       bind('#gear', openSettings);
+      // Contrôles du DJ de la série (depuis son propre téléphone)
+      bind('#djCloseRace', function () { chan.sendIntent({ action: 'closeRace', id: ME }); });
+      bind('#djApply', function () { chan.sendIntent({ action: 'applyTurbo', id: ME }); });
+      bind('#djOk', function () { chan.sendIntent({ action: 'judge', id: ME, correct: true }); });
+      bind('#djKo', function () { chan.sendIntent({ action: 'judge', id: ME, correct: false }); });
+      bind('#djHalf', function () { chan.sendIntent({ action: 'judge', id: ME, correct: true, partial: true }); });
+      Array.prototype.forEach.call(document.querySelectorAll('.djGrade'), function (b) {
+        b.onclick = function () { chan.sendIntent({ action: 'grade', id: ME, target: b.getAttribute('data-id'), g: b.getAttribute('data-g') }); beep(660, 0.05, 'sine'); };
+      });
+
       // Mode Turbo : envoi de la réponse par tout le monde
       var rT = $('#raceTitle'), rA = $('#raceArtist'), rO = $('#raceOne');
       if (rT || rO) {
@@ -1684,6 +1750,7 @@
           beep(880, 0.08, 'sine'); vibrate(40);
         };
         bind('#raceSend', raceSend);
+        bind('#racePass', function () { chan.sendIntent({ action: 'race', id: ME, name: name, text: '' }); beep(300, 0.08, 'sine'); });
         [rT, rA, rO].forEach(function (el) { if (el) el.onkeydown = function (e) { if (e.key === 'Enter') raceSend(); }; });
       }
 

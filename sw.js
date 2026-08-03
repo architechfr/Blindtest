@@ -1,5 +1,5 @@
 /* Blind Test Musical — service worker (PWA installable + offline) */
-const CACHE = 'blindtest-v1';
+const CACHE = 'blindtest-v2';
 const ASSETS = ['./', './index.html', './manifest.json', './assets/icon-192.png', './assets/icon-512.png'];
 
 self.addEventListener('install', (e) => {

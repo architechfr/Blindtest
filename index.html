@@ -133,8 +133,10 @@
     }
 
     /* ====================== UTILITAIRES NÉON ====================== */
-    .glass { background: linear-gradient(180deg, rgba(40,12,66,.5), rgba(10,3,26,.62));
-      backdrop-filter: blur(10px);
+    /* Pas de backdrop-filter ici : appliqué à chaque carte, c'est le plus gros
+       consommateur GPU sur mobile (flou recalculé à chaque frame). Le dégradé
+       opaque donne le même rendu pour un coût quasi nul. */
+    .glass { background: linear-gradient(180deg, rgba(40,12,66,.72), rgba(10,3,26,.82));
       border: 1px solid rgba(34,211,238,.22);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 0 26px rgba(34,211,238,.08); }
     .text-glow { text-shadow: 0 0 16px rgba(255,46,154,.7), 0 0 38px rgba(255,46,154,.35); }
@@ -180,6 +182,25 @@
     body[data-theme="mint"] .bt-grid { background-image: linear-gradient(to right,rgba(94,234,212,.6) 1.5px,transparent 1.5px),linear-gradient(to bottom,rgba(244,114,182,.5) 1.5px,transparent 1.5px); }
 
     body.bt-no-anim .bt-grid { animation: none; }
+
+    /* ================= ÉCONOMIE DE BATTERIE =================
+       Une animation plein écran en boucle fait travailler le GPU 60×/s sans
+       interruption : c'est ce qui fait chauffer les téléphones. On la coupe
+       dès que la page n'est pas regardée, et en mode éco. */
+    body.bt-paused .bt-grid,
+    body.bt-paused .animate-float,
+    body.bt-paused .animate-pulse,
+    body.bt-paused .animate-ring { animation-play-state: paused !important; }
+
+    body.bt-eco .bt-grid { animation: none !important; }
+    body.bt-eco .animate-float,
+    body.bt-eco .animate-pulse,
+    body.bt-eco .animate-ring { animation: none !important; }
+    body.bt-eco .bt-scan { display: none; }            /* voile plein écran inutile */
+    body.bt-eco #settings, body.bt-eco #picker,
+    body.bt-eco #scanner { backdrop-filter: none; background: rgba(3,0,10,.9); }
+    body.bt-eco #app { backdrop-filter: none; }
+    body.bt-eco .bt-sun { box-shadow: none; }          /* grandes ombres = coûteuses */
 
     /* ====================== ROUE & MENU RÉGLAGES ====================== */
     .gear { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 14px; z-index: 5;
@@ -488,6 +509,29 @@
   var ME = store.get('clientId', null);
   if (!ME) { ME = uuid(); store.set('clientId', ME); }
 
+  /* Historique : une partie terminée est archivée et ne doit plus être proposée
+     en « reprise rapide » sur l'accueil. */
+  function archiveGame(st, code, myName) {
+    try {
+      var hist = store.get('history', []);
+      if (hist.some(function (h) { return h.code === code && h.round === st.round; })) return;
+      var info = fairInfo(st.players);
+      var lb = (!info.balanced ? leaderboardFair(st.players, info) : leaderboardArr(st.players));
+      var me = st.players && st.players[ME];
+      hist.unshift({
+        code: code, party: st.partyName || 'Blind Test', at: Date.now(),
+        rounds: st.round, mode: st.mode,
+        winner: lb[0] ? lb[0].name : '', winnerScore: lb[0] ? (info.balanced ? lb[0].score : fairScore(lb[0], info)) : 0,
+        myName: myName || (me && me.name) || '', myScore: me ? me.score : null,
+        myRank: lb.findIndex(function (p) { return p.id === ME; }) + 1,
+        players: lb.length
+      });
+      store.set('history', hist.slice(0, 20));
+      var lj = store.get('lastJoin', null);
+      if (lj && lj.code === code) store.del('lastJoin'); // ne plus proposer d'y revenir
+    } catch (e) {}
+  }
+
   /* --------------------------------------------------------------------------
      1. Couche temps réel (Supabase Realtime)
      -------------------------------------------------------------------------- */
@@ -495,7 +539,8 @@
   function client() {
     if (supa) return supa;
     if (!window.supabase || !SB_URL) throw new Error('SDK Supabase indisponible');
-    supa = window.supabase.createClient(SB_URL, SB_KEY, { realtime: { params: { eventsPerSecond: 20 } } });
+    // 10 évts/s suffisent largement pour un blind test et réduisent le réveil radio du téléphone.
+    supa = window.supabase.createClient(SB_URL, SB_KEY, { realtime: { params: { eventsPerSecond: 10 } } });
     return supa;
   }
 
@@ -552,6 +597,33 @@
   /* --------------------------------------------------------------------------
      3. Vue ACCUEIL
      -------------------------------------------------------------------------- */
+  /* Vraie cassette audio (K7) dessinée en SVG — l'emoji 📼 est une VHS. */
+  function cassetteSVG(w) {
+    var h = Math.round(w * 0.64);
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 200 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cassette audio">'
+      + '<defs>'
+      + '<linearGradient id="k7body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1150"/><stop offset="1" stop-color="#12042a"/></linearGradient>'
+      + '<linearGradient id="k7label" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2e9a"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>'
+      + '</defs>'
+      // corps
+      + '<rect x="3" y="3" width="194" height="122" rx="12" fill="url(#k7body)" stroke="#22d3ee" stroke-width="3"/>'
+      // étiquette
+      + '<rect x="16" y="14" width="168" height="52" rx="6" fill="url(#k7label)" opacity=".92"/>'
+      + '<rect x="16" y="14" width="168" height="52" rx="6" fill="none" stroke="#ffffff" stroke-opacity=".35"/>'
+      + '<line x1="26" y1="32" x2="174" y2="32" stroke="#fff" stroke-opacity=".5" stroke-width="2"/>'
+      + '<line x1="26" y1="46" x2="140" y2="46" stroke="#fff" stroke-opacity=".35" stroke-width="2"/>'
+      // fenêtre centrale + bobines
+      + '<rect x="40" y="74" width="120" height="40" rx="7" fill="#0b0014" stroke="#22d3ee" stroke-width="2.5" stroke-opacity=".8"/>'
+      + '<circle cx="70" cy="94" r="13" fill="none" stroke="#ff2e9a" stroke-width="4"/>'
+      + '<circle cx="70" cy="94" r="4.5" fill="#ff2e9a"/>'
+      + '<circle cx="130" cy="94" r="13" fill="none" stroke="#22d3ee" stroke-width="4"/>'
+      + '<circle cx="130" cy="94" r="4.5" fill="#22d3ee"/>'
+      + '<rect x="83" y="90" width="34" height="8" fill="#3b1560"/>' // bande entre bobines
+      // vis
+      + '<circle cx="14" cy="116" r="3" fill="#22d3ee" opacity=".6"/><circle cx="186" cy="116" r="3" fill="#22d3ee" opacity=".6"/>'
+      + '</svg>';
+  }
+
   function renderHome() {
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
     // Reprise rapide : si on a rejoint une partie il y a moins de 4 h, on propose d'y retourner.
@@ -560,12 +632,12 @@
     app.innerHTML = [
       '<div class="relative flex-1 flex flex-col items-center justify-center px-6 py-10 max-w-md mx-auto w-full">',
       '  <button id="gear" class="gear glass flex items-center justify-center text-lg" aria-label="Réglages">⚙️</button>',
-      '  <div class="text-7xl mb-3 animate-float">📼</div>',
+      '  <div class="mb-3 animate-float">' + cassetteSVG(132) + '</div>',
       '  <h1 class="bt-logo text-5xl sm:text-6xl text-center leading-none">BLIND<br>TEST</h1>',
       '  <p class="bt-title text-neon-cyan glow-cyan text-center text-sm tracking-[0.45em] mt-3 uppercase">Musical</p>',
       '  <p class="text-white/55 text-center mt-3 mb-8">Buzze, réponds, vote. Le plus rapide gagne. 🏆</p>',
 
-      (lj ? '  <button id="resumeJoin" class="btn-glow-cyan w-full py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-cyan to-neon-lime text-black active:animate-pop mb-3">↩︎ Revenir dans la partie ' + esc(lj.code) + '</button>' : ''),
+      (lj ? '  <div class="w-full flex gap-2 mb-3"><button id="resumeJoin" class="btn-glow-cyan flex-1 py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-cyan to-neon-lime text-black active:animate-pop">↩︎ Revenir dans ' + esc(lj.code) + '</button><button id="dropJoin" class="px-4 rounded-2xl glass text-white/60" title="Ne plus proposer">✕</button></div>' : ''),
 
       '  <button id="goHost" class="btn-glow w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-4">',
       '    🎤 Créer une partie</button>',
@@ -589,6 +661,7 @@
     });
     bind('#scanBtn', openScanner);
     bind('#resumeJoin', function () { if (lj) { beep(660, 0.1, 'sine'); startPlayer(lj.code, lj.name); } });
+    bind('#dropJoin', function () { store.del('lastJoin'); renderHome(); });
     var code = $('#joinCode');
     code.oninput = function () { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
     function join() {
@@ -1070,7 +1143,7 @@
       confetti(180); beep(880, 0.3, 'sine');
       publish();
     }
-    function endGame() { dzPause(); state.phase = 'ended'; confetti(240); publish(); }
+    function endGame() { dzPause(); state.phase = 'ended'; confetti(240); archiveGame(state, state.code, state.hostName); publish(); }
     function replay() {
       Object.keys(state.players).forEach(function (id) { var p = state.players[id]; p.score = 0; p.played = 0; p.djTurns = 0; });
       state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
@@ -1174,7 +1247,17 @@
     }
 
     // Rafraîchit l'écran hôte chaque seconde pendant le vote (compte à rebours vivant).
-    var voteTick = setInterval(function () { if (state.phase === 'voting') renderHost(); }, 1000);
+    // Décompte du vote : on met à jour UNIQUEMENT le chiffre affiché.
+    // (Reconstruire tout l'écran chaque seconde était inutilement coûteux.)
+    var voteTick = setInterval(function () {
+      if (state.phase !== 'voting' || document.hidden) return;
+      var el = document.getElementById('voteLeft');
+      if (!el) return;
+      var secs = (state.config && state.config.voteSecs) || 10;
+      var left = state.voteAt ? Math.max(0, Math.ceil((state.voteAt + secs * 1000 - Date.now()) / 1000)) : 0;
+      if (el.textContent !== String(left)) el.textContent = left;
+      if (left === 0) renderHost(); // fin du décompte : on débloque les boutons
+    }, 1000);
 
     current = {
       destroy: function () { if (chan) chan.close(); dzPause(); clearInterval(voteTick); }
@@ -1293,7 +1376,7 @@
           '  <div class="flex justify-center gap-6 text-xl my-4"><span>👍 ' + t.up + '</span><span>👎 ' + t.down + '</span><span class="text-white/40 text-sm self-center">' + (t.up + t.down) + '/' + expected + ' votes</span></div>',
           (canDecide
             ? '  <p class="text-neon-lime text-sm font-bold mb-2">' + (allVoted ? 'Tout le monde a voté ✓' : 'Temps de vote écoulé') + '</p>'
-            : '  <div class="mb-3"><div class="text-4xl font-extrabold text-neon-cyan glow-cyan">' + left + '</div><p class="text-white/50 text-xs">temps de vote… laisse les autres répondre</p></div>'),
+            : '  <div class="mb-3"><div id="voteLeft" class="text-4xl font-extrabold text-neon-cyan glow-cyan">' + left + '</div><p class="text-white/50 text-xs">temps de vote… laisse les autres répondre</p></div>'),
           '  <div class="grid grid-cols-2 gap-3 ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">',
           '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
           '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
@@ -1565,6 +1648,8 @@
         if (st.phase === 'year_guess' && lastPhase !== 'year_guess') guessed = false;
         if (st.phase === 'buzzing' && lastPhase !== 'buzzing') answered = false;
         if (st.phase === 'racing' && lastPhase !== 'racing') { raceMine = null; raceCount = 0; }
+        // Partie terminée → on l'archive et on cesse de proposer d'y revenir.
+        if (st.phase === 'ended' && lastPhase !== 'ended') archiveGame(st, code, name);
         if (st.phase === 'reveal' && st.result && st.result.correct && lastPhase !== 'reveal') confetti(120);
         if (st.phase === 'year_reveal' && lastPhase !== 'year_reveal' && st.result && (st.result.winners || []).indexOf(ME) >= 0) confetti(140);
         if (st.phase === 'ended' && lastPhase !== 'ended') confetti(220);
@@ -2046,12 +2131,45 @@
     muted: store.get('muted', false),
     novib: store.get('novib', false),
     noanim: store.get('noanim', false),
-    deezer: store.get('deezer', true)
+    deezer: store.get('deezer', true),
+    eco: store.get('eco', false)
   };
   function applyPrefs() {
     document.body.setAttribute('data-theme', prefs.theme || 'synthwave');
     document.body.classList.toggle('bt-no-anim', !!prefs.noanim);
+    document.body.classList.toggle('bt-eco', !!prefs.eco);
   }
+
+  /* --- Économie d'énergie ---------------------------------------------------
+     1. On met les animations en pause dès que l'écran n'est pas regardé
+        (changement d'appli, écran verrouillé) : plus rien ne tourne pour rien.
+     2. On bascule en mode éco automatiquement si la batterie est faible. */
+  function updatePaused() { document.body.classList.toggle('bt-paused', document.hidden); }
+  document.addEventListener('visibilitychange', updatePaused);
+  updatePaused();
+
+  (function autoEco() {
+    try {
+      // Respecte le réglage système « réduire les animations »
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches && !store.get('ecoSet', false)) {
+        prefs.eco = true; applyPrefs();
+      }
+      if (navigator.getBattery) {
+        navigator.getBattery().then(function (b) {
+          var check = function () {
+            // < 25 % et pas en charge → on économise, sauf si l'utilisateur a choisi lui-même
+            if (!store.get('ecoSet', false) && !b.charging && b.level <= 0.25 && !prefs.eco) {
+              prefs.eco = true; applyPrefs();
+              toast('Batterie faible : mode éco activé 🔋', 'info');
+            }
+          };
+          check();
+          b.addEventListener('levelchange', check);
+          b.addEventListener('chargingchange', check);
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  })();
 
   var deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredPrompt = e; });
@@ -2100,6 +2218,7 @@
       '    <div class="set-row"><span>📳 Vibrations</span><button id="tgVib" class="toggle ' + (prefs.novib ? '' : 'on') + '"></button></div>',
       '    <div class="set-row"><span>🎉 Animations &amp; confettis</span><button id="tgAnim" class="toggle ' + (prefs.noanim ? '' : 'on') + '"></button></div>',
       '    <div class="set-row"><span>🎵 Lecteur Deezer intégré</span><button id="tgDeezer" class="toggle ' + (prefs.deezer ? 'on' : '') + '"></button></div>',
+      '    <div class="set-row"><span>🔋 Économie de batterie<span class="block text-xs text-white/40">coupe les animations lourdes</span></span><button id="tgEco" class="toggle ' + (prefs.eco ? 'on' : '') + '"></button></div>',
       '  </div>',
 
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Application</p>',
@@ -2107,6 +2226,9 @@
            (deferredPrompt ? '<button id="setInstall" class="btn-glow-cyan py-3 rounded-xl bg-neon-cyan text-black font-extrabold text-sm">📲 Installer l\'app</button>' : ''),
       '    <button id="setFs" class="py-3 rounded-xl glass font-bold text-sm ' + (deferredPrompt ? '' : 'col-span-2') + '">⛶ Plein écran</button>',
       '  </div>',
+
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Historique</p>',
+      '  <button id="setHistory" class="w-full py-3 rounded-xl glass font-bold flex items-center justify-center gap-2">📜 Mes parties jouées (' + (store.get('history', []) || []).length + ')</button>',
 
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Aide au développement</p>',
       '  <button id="setFeedback" class="w-full py-3 rounded-xl glass font-bold flex items-center justify-center gap-2">💬 Donner mon avis / signaler un bug</button>',
@@ -2144,10 +2266,48 @@
     bind('#tgVib', function () { prefs.novib = !prefs.novib; store.set('novib', prefs.novib); if (!prefs.novib) vibrate(60); openSettings(); });
     bind('#tgAnim', function () { prefs.noanim = !prefs.noanim; store.set('noanim', prefs.noanim); applyPrefs(); if (!prefs.noanim) confetti(50); openSettings(); });
     bind('#tgDeezer', function () { prefs.deezer = !prefs.deezer; store.set('deezer', prefs.deezer); openSettings(); });
+    bind('#tgEco', function () { prefs.eco = !prefs.eco; store.set('eco', prefs.eco); store.set('ecoSet', true); applyPrefs(); openSettings(); });
 
     bind('#setInstall', function () { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); } });
     bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
     bind('#setFeedback', openFeedback);
+    bind('#setHistory', openHistory);
+  }
+
+  /* Historique des parties terminées. */
+  function openHistory() {
+    if (!settingsEl) return;
+    var hist = store.get('history', []) || [];
+    var fmt = function (ts) {
+      try { var d = new Date(ts); return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
+      catch (e) { return ''; }
+    };
+    var MODE_LBL = { classic: '🔊 Classique', turbo: '⚡ Turbo', fredonne: '🎶 Fredonne', year: '📅 Année' };
+    settingsEl.innerHTML = [
+      '<div class="set-panel p-5 animate-slidein">',
+      '  <div class="flex items-center justify-between mb-3">',
+      '    <button id="hBack" class="text-white/60 text-sm">← Retour</button>',
+      '    <h2 class="bt-title text-lg font-extrabold glow-cyan">HISTORIQUE</h2>',
+      '    <button id="hClose" class="w-9 h-9 rounded-full glass text-lg">✕</button>',
+      '  </div>',
+      (hist.length ? hist.map(function (h) {
+        var podium = h.myRank === 1 ? '🥇' : h.myRank === 2 ? '🥈' : h.myRank === 3 ? '🥉' : '';
+        return '<div class="glass rounded-2xl p-3 mb-2">'
+          + '<div class="flex items-center justify-between gap-2"><span class="font-extrabold truncate">' + esc(h.party) + '</span><span class="text-white/35 text-xs shrink-0">' + fmt(h.at) + '</span></div>'
+          + '<div class="text-white/45 text-xs mt-0.5">' + (MODE_LBL[h.mode] || '') + ' · ' + h.rounds + ' manche' + (h.rounds > 1 ? 's' : '') + ' · ' + h.players + ' joueur' + (h.players > 1 ? 's' : '') + ' · code ' + esc(h.code) + '</div>'
+          + '<div class="flex items-center justify-between mt-2 text-sm">'
+          + '<span class="text-neon-gold font-bold truncate">🏆 ' + esc(h.winner || '—') + ' (' + h.winnerScore + ')</span>'
+          + (h.myScore != null ? '<span class="text-white/70 shrink-0">' + podium + ' toi : <b>' + h.myScore + '</b>' + (h.myRank ? ' · #' + h.myRank : '') + '</span>' : '')
+          + '</div></div>';
+      }).join('') : '<p class="text-white/40 text-center py-8">Aucune partie terminée pour l\'instant.<br><span class="text-xs">Elles s\'archiveront ici automatiquement.</span></p>'),
+      (hist.length ? '  <button id="hClear" class="mt-2 w-full py-3 rounded-xl glass text-white/50 font-bold text-sm">Effacer l\'historique</button>' : ''),
+      '</div>'
+    ].join('');
+    settingsEl.classList.remove('hidden');
+    settingsEl.onclick = function (e) { if (e.target === settingsEl) closeSettings(); };
+    bind('#hBack', openSettings);
+    bind('#hClose', closeSettings);
+    bind('#hClear', function () { if (confirm('Effacer tout l\'historique ?')) { store.del('history'); openHistory(); } });
   }
 
   /* Formulaire de retour d'expérience (envoi par email, sans serveur). */

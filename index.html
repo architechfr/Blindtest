@@ -737,6 +737,13 @@
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔥 Bonus</p>',
+      '  <div class="grid grid-cols-2 gap-2 mb-2">',
+      '    <button type="button" id="suCombos" class="py-3 rounded-xl text-sm font-bold bg-neon-gold text-black">🔥 Combos</button>',
+      '    <button type="button" id="suJokers" class="py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black">🃏 Jokers</button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5"><b>Combos</b> : bonnes réponses d\'affilée = bonus croissant (+1, +2, +3). <b>Jokers</b> : chaque joueur reçoit 1 × « ×2 » (double ses points) et 1 × « 🛡️ bouclier » (annule un malus), à jouer quand il veut.</p>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🏁 Fin de partie</p>',
       '  <div class="grid grid-cols-3 gap-2 mb-2">',
       '    <button type="button" class="suGoal py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-goal="none">Libre</button>',
@@ -801,6 +808,12 @@
     $('#back').onclick = function () { location.hash = ''; };
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none';
+    var setupCombos = 1, setupJokers = 1;
+    (function () {
+      var cb = document.getElementById('suCombos'), jb = document.getElementById('suJokers');
+      if (cb) cb.onclick = function () { setupCombos = setupCombos ? 0 : 1; cb.className = 'py-3 rounded-xl text-sm font-bold ' + (setupCombos ? 'bg-neon-gold text-black' : 'bg-black/30 text-white/50'); };
+      if (jb) jb.onclick = function () { setupJokers = setupJokers ? 0 : 1; jb.className = 'py-3 rounded-xl text-sm font-bold ' + (setupJokers ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/50'); };
+    })();
     Array.prototype.forEach.call(document.querySelectorAll('.suGoal'), function (b) {
       b.onclick = function () {
         setupGoal = b.getAttribute('data-goal');
@@ -870,6 +883,7 @@
       st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
       st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
       st.turboSecs = Math.min(120, Math.max(10, parseInt(($('#turboSecs') || {}).value, 10) || 30));
+      st.combos = setupCombos; st.jokers = setupJokers;
       st.goal = setupGoal;
       st.goalVal = Math.max(1, parseInt(($('#goalVal') || {}).value, 10) || (setupGoal === 'score' ? 50 : 20));
       st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
@@ -888,7 +902,7 @@
       buzzOpenAt: 0, buzzMs: null, voteAt: 0, tried: [],
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
-      goal: 'none', goalVal: 0,
+      goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -928,7 +942,10 @@
         Object.keys(state.players).forEach(function (k) { if (typeof state.players[k].ord === 'number' && state.players[k].ord > maxOrd) maxOrd = state.players[k].ord; });
         // played = manches où le joueur POUVAIT marquer (il n'était ni DJ ni fredonneur).
         // djTurns = nombre de titres passés aux commandes. Sert à l'équité du classement.
-        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null, ord: maxOrd + 1, played: 0, djTurns: 0 };
+        // streak = bonnes réponses d'affilée (combo) ; jx2 / jsh = jokers restants.
+        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null, ord: maxOrd + 1,
+                              played: 0, djTurns: 0, streak: 0, best: 0,
+                              jx2: state.jokers ? 1 : 0, jsh: state.jokers ? 1 : 0 };
         if (state.teams) assignTeam(state.players[id]);
       } else if (name) state.players[id].name = name;
       return state.players[id];
@@ -971,6 +988,18 @@
           beep(520, 0.12, 'sine');
           publish();
         }
+      } else if (p.action === 'joker') {
+        // Un joker s'active AVANT de connaître le résultat, et une seule fois par manche.
+        var jp = state.players[p.id];
+        if (!jp || !state.jokers) return;
+        if ((state.jok || {})[p.id]) return;                       // déjà un joker sur cette manche
+        if (state.phase === 'reveal' || state.phase === 'ended' ||
+            state.phase === 'turbo_reveal' || state.phase === 'year_reveal' || state.phase === 'lobby') return;
+        if (p.kind === 'x2' && jp.jx2 > 0) { jp.jx2--; state.jok[p.id] = 'x2'; }
+        else if (p.kind === 'sh' && jp.jsh > 0) { jp.jsh--; state.jok[p.id] = 'sh'; }
+        else return;
+        beep(920, 0.12, 'sine');
+        publish();
       } else if (p.action === 'race') {
         // Mode Turbo : chacun envoie sa réponse, on horodate pour le barème vitesse.
         if (state.phase === 'racing' && !state.answers[p.id] && !(state.dj && state.dj.id === p.id)) {
@@ -1038,7 +1067,7 @@
       state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
       state.reveal = null; state.suggest = null;
       state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
-      state.answers = {}; state.grades = {}; state.turboScores = null;
+      state.answers = {}; state.grades = {}; state.turboScores = null; state.jok = {};
     }
     function armBuzz() {
       state.phase = 'armed';
@@ -1142,14 +1171,27 @@
       var b = state.players[state.buzzer.id];
       // partial = mode « Titre + Artiste » avec une seule des deux trouvée → points réduits.
       var gain = correct ? (partial ? Math.ceil(state.config.pointsBuzz / 2) : state.config.pointsBuzz) : state.config.pointsWrong;
-      if (b) b.score += gain;
+      var combo = 0, jokerLbl = '';
+      if (b) {
+        // COMBO : bonnes réponses d'affilée → bonus croissant (+1, +2, +3 max)
+        if (correct) {
+          b.streak = (b.streak || 0) + 1;
+          if (b.streak > (b.best || 0)) b.best = b.streak;
+          if (state.combos && b.streak >= 2) { combo = Math.min(b.streak - 1, 3); gain += combo; }
+        } else { b.streak = 0; }
+        // JOKERS : ×2 double le gain, 🛡️ annule le malus
+        var jk = (state.jok || {})[b.id];
+        if (jk === 'x2' && correct) { gain *= 2; jokerLbl = '🃏 ×2'; }
+        else if (jk === 'sh' && !correct) { gain = 0; jokerLbl = '🛡️ protégé'; }
+        b.score += gain;
+      }
       // Le vote est un pari : bien juger rapporte, mal juger coûte.
       Object.keys(state.votes).forEach(function (vid) {
         var agreed = (state.votes[vid] === 1) === correct;
         if (!state.players[vid]) return;
         state.players[vid].score += agreed ? state.config.pointsVote : (state.config.pointsVoteWrong || 0);
       });
-      state.result = { correct: correct, partial: !!partial, gain: gain };
+      state.result = { correct: correct, partial: !!partial, gain: gain, combo: combo, joker: jokerLbl, streak: b ? b.streak : 0 };
       dzPause();
       // Reste-t-il quelqu'un qui pourrait rebondir ? (si oui et réponse fausse, on ne révèle pas encore)
       var triedNow = (state.tried || []).concat(state.buzzer ? [state.buzzer.id] : []);
@@ -1207,13 +1249,28 @@
       var first = goodSorted[0];
       var out = {};
       ids.forEach(function (id) {
-        var g = state.grades[id], a = state.answers[id];
-        if (g !== 'ok' && g !== 'half') { out[id] = { pts: 0, name: a.name, ms: a.ms, grade: g }; return; }
+        var g = state.grades[id], a = state.answers[id], pl = state.players[id];
+        var jk = (state.jok || {})[id];
+        if (g !== 'ok' && g !== 'half') {
+          if (pl) pl.streak = 0;
+          out[id] = { pts: 0, name: a.name, ms: a.ms, grade: g, joker: jk === 'sh' ? '🛡️' : '' };
+          return;
+        }
         var speed = Math.max(0, 1 - (a.ms / T));           // 1 = instantané, 0 = fin de fenêtre
         var pts = 60 + Math.round(40 * speed);              // 60 → 100
         if (id === first) pts = Math.min(100, pts + 10);    // bonus éclair au 1er juste
         if (g === 'half') pts = Math.round(pts / 2);        // une seule des deux trouvée
-        out[id] = { pts: pts, name: a.name, ms: a.ms, grade: g, first: id === first };
+        // COMBO : +5 pts par cran de série (max +15), à l'échelle du barème /100
+        var cb = 0;
+        if (pl) {
+          pl.streak = (pl.streak || 0) + 1;
+          if (pl.streak > (pl.best || 0)) pl.best = pl.streak;
+          if (state.combos && pl.streak >= 2) { cb = Math.min(pl.streak - 1, 3) * 5; pts += cb; }
+        }
+        var jlbl = '';
+        if (jk === 'x2') { pts *= 2; jlbl = '🃏×2'; }
+        out[id] = { pts: pts, name: a.name, ms: a.ms, grade: g, first: id === first,
+                    combo: cb, streak: pl ? pl.streak : 0, joker: jlbl };
       });
       return out;
     }
@@ -1229,7 +1286,11 @@
     }
     function endGame() { dzPause(); state.phase = 'ended'; confetti(240); archiveGame(state, state.code, state.hostName); publish(); }
     function replay() {
-      Object.keys(state.players).forEach(function (id) { var p = state.players[id]; p.score = 0; p.played = 0; p.djTurns = 0; });
+      Object.keys(state.players).forEach(function (id) {
+        var p = state.players[id];
+        p.score = 0; p.played = 0; p.djTurns = 0; p.streak = 0; p.best = 0;
+        p.jx2 = state.jokers ? 1 : 0; p.jsh = state.jokers ? 1 : 0;
+      });
       state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
       state._djIdx = -1; state.djCount = 0; state.dj = null;
       dzPause(); roundTrack = null;
@@ -1597,7 +1658,7 @@
           '  <div class="mt-4 text-left">' + (rankT.length ? rankT.map(function (id) {
                  var r = ts[id];
                  return '<div class="flex items-center gap-2 rounded-xl px-3 py-2 mb-1.5 ' + (r.pts > 0 ? 'bg-neon-lime/10' : 'bg-black/25') + '">'
-                   + '<span class="flex-1 font-bold text-sm truncate">' + (r.first ? '⚡ ' : '') + esc(r.name) + '</span>'
+                   + '<span class="flex-1 font-bold text-sm truncate">' + (r.first ? '⚡ ' : '') + esc(r.name) + (r.combo ? ' <span class="text-neon-gold text-xs">🔥×' + r.streak + '</span>' : '') + (r.joker ? ' <span class="text-neon-cyan text-xs">' + r.joker + '</span>' : '') + '</span>'
                    + '<span class="text-white/40 text-xs">' + (r.ms / 1000).toFixed(1) + 's</span>'
                    + '<span class="font-extrabold ' + (r.pts > 0 ? 'text-neon-gold' : 'text-white/30') + ' w-12 text-right">+' + r.pts + '</span></div>';
                }).join('') : '<p class="text-white/40 text-center">Aucune réponse</p>') + '</div>',
@@ -1656,6 +1717,9 @@
           '  <div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div>',
           '  <p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
           '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + ' ' + ((s.result.gain != null ? s.result.gain : 0) >= 0 ? '+' : '') + (s.result.gain != null ? s.result.gain : 0) + ' pts' + (s.result.partial ? ' <span class="text-neon-gold">(à moitié)</span>' : '') + '</p>',
+          ((s.result.combo || s.result.joker || (s.result.streak || 0) >= 2)
+            ? '  <p class="text-sm font-bold mt-1">' + (s.result.combo ? '<span class="text-neon-gold">🔥 combo ×' + s.result.streak + ' (+' + s.result.combo + ')</span> ' : '') + (s.result.joker ? '<span class="text-neon-cyan">' + s.result.joker + '</span>' : '') + '</p>'
+            : ''),
                revealCard(s.reveal),
           (!s.result.correct && !s.reveal
             ? '  <button id="reopen" class="mt-5 w-full py-3.5 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">🔔 Rebond : rouvrir le buzz aux autres</button>'
@@ -2067,6 +2131,18 @@
           + (s.theme ? '<span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span>' : '')
           + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'either' ? '🎲 Titre OU Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
+        // Jokers : utilisables une fois chacun, avant de connaître le résultat.
+        (function () {
+          if (!s.jokers || imDJ || !mine) return '';
+          var playing = ['armed', 'buzzing', 'answering', 'voting', 'racing', 'year_guess', 'judging'].indexOf(s.phase) >= 0;
+          if (!playing) return '';
+          var used = (s.jok || {})[ME];
+          if (used) return '  <div class="text-center mb-2 text-sm font-bold ' + (used === 'x2' ? 'text-neon-gold' : 'text-neon-cyan') + '">' + (used === 'x2' ? '🃏 Joker ×2 activé !' : '🛡️ Bouclier activé') + '</div>';
+          return '  <div class="grid grid-cols-2 gap-2 mb-2">'
+            + '<button id="jokX2" class="py-2.5 rounded-xl text-sm font-bold ' + (mine.jx2 > 0 ? 'bg-neon-gold text-black' : 'bg-white/10 text-white/30 pointer-events-none') + '">🃏 ×2 <span class="text-xs">(' + (mine.jx2 || 0) + ')</span></button>'
+            + '<button id="jokSh" class="py-2.5 rounded-xl text-sm font-bold ' + (mine.jsh > 0 ? 'bg-neon-cyan text-black' : 'bg-white/10 text-white/30 pointer-events-none') + '">🛡️ Bouclier <span class="text-xs">(' + (mine.jsh || 0) + ')</span></button>'
+            + '</div>';
+        })(),
         '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME, fairArgP) + (fairArgP ? '<p class="text-white/45 text-xs mt-2 text-center">⚖️ Scores ajustés : chacun n\'a pas été DJ le même nombre de fois</p>' : '') + '</div>',
         '  <button id="leave" class="mt-3 text-white/40 text-sm">Quitter</button>',
         '</div>'
@@ -2075,6 +2151,8 @@
       // Liaisons d'événements
       bind('#leave', function () { location.hash = ''; });
       bind('#gear', openSettings);
+      bind('#jokX2', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'x2' }); beep(920, 0.1, 'sine'); vibrate(50); toast('Joker ×2 activé 🃏', 'ok'); });
+      bind('#jokSh', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'sh' }); beep(700, 0.1, 'sine'); vibrate(50); toast('Bouclier activé 🛡️', 'ok'); });
       // Contrôles du DJ de la série (depuis son propre téléphone)
       bind('#djCloseRace', function () { chan.sendIntent({ action: 'closeRace', id: ME }); });
       bind('#djApply', function () { chan.sendIntent({ action: 'applyTurbo', id: ME }); });
@@ -2271,7 +2349,8 @@
         '  <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ' + (on ? '' : 'opacity-40') + '" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</div>',
         (typeof p.team === 'number' ? '  <span class="w-2.5 h-2.5 rounded-full shrink-0 -ml-1.5" title="Équipe ' + (TEAM_NAMES[p.team] || '') + '" style="background:' + (TEAM_COLORS[p.team] || '#888') + '"></span>' : ''),
         '  <div class="flex-1 min-w-0">',
-        '    <div class="font-bold truncate text-sm ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + (fair && sc !== p.score ? ' <span class="text-xs text-neon-cyan" title="ajusté : ' + (p.djTurns || 0) + ' titre(s) en tant que DJ">⚖️</span>' : '') + '</div>',
+        '    <div class="font-bold truncate text-sm ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + (fair && sc !== p.score ? ' <span class="text-xs text-neon-cyan" title="ajusté : ' + (p.djTurns || 0) + ' titre(s) en tant que DJ">⚖️</span>' : '')
+          + ((p.streak || 0) >= 2 ? ' <span class="text-xs font-extrabold text-neon-gold" title="' + p.streak + ' bonnes réponses d\'affilée">🔥×' + p.streak + '</span>' : '') + '</div>',
         '    <div class="h-1.5 mt-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="width:' + pct + '%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>',
         '  </div>',
         '  <div class="text-right"><div class="font-extrabold text-neon-gold tabular-nums text-lg">' + sc + '</div>' + (fair && sc !== p.score ? '<div class="text-white/35 text-[10px] leading-none">brut ' + p.score + '</div>' : '') + '</div>',
@@ -2548,6 +2627,11 @@
         + '<b class="text-neon-cyan">+ 0 à 40 pts</b> selon ta rapidité · <b class="text-neon-gold">+10</b> au plus rapide<br>'
         + '≈ à moitié = la moitié · faux ou passe = <b>0</b>, aucun malus<br>'
         + '<span class="text-white/50 text-xs">Soit 60 à 100 points par bonne réponse — tout le monde marque, l\'écart se fait au chrono.</span>'),
+      sec('🔥 Combos et 🃏 Jokers',
+        '<b>Combo</b> : 2 bonnes réponses d\'affilée = <b class="text-neon-gold">+1</b>, 3 d\'affilée = <b class="text-neon-gold">+2</b>, 4 et + = <b class="text-neon-gold">+3</b>. Une erreur remet la série à zéro.<br>'
+        + '<b>🃏 Joker ×2</b> : double tes points sur la manche.<br>'
+        + '<b>🛡️ Bouclier</b> : annule le malus si tu te trompes.<br>'
+        + '<span class="text-white/50 text-xs">1 de chaque par partie, à activer <b>avant</b> de connaître le résultat. En Turbo, le combo vaut +5/+10/+15.</span>'),
       sec('🤷 Je ne sais pas',
         'En mode Turbo, un bouton <b>« Je passe »</b> permet de ne pas bloquer la manche.<br>'
         + 'En Classique, il suffit de <b>ne pas buzzer</b>.'),

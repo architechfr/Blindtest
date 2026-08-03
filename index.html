@@ -7,6 +7,14 @@
   <title>🎵 Blind Test — Soirée entre amis</title>
   <meta name="description" content="Blind Test musical multijoueur en temps réel : buzz, votes et leaderboard live." />
 
+  <!-- Aperçu visuel lors du partage du lien -->
+  <meta property="og:title" content="🎵 Blind Test Musical" />
+  <meta property="og:description" content="Buzze, réponds, vote. Le plus rapide gagne ! Blind test multijoueur en temps réel." />
+  <meta property="og:image" content="https://architechfr.github.io/Blindtest/assets/og-image.png" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://architechfr.github.io/Blindtest/assets/og-image.png" />
+
   <!-- Tailwind (CDN, comme le reste d'AXION) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -559,11 +567,9 @@
 
       '  <div class="glass rounded-2xl p-5 w-full">',
       '    <label class="block text-sm text-white/60 mb-2 font-bold uppercase tracking-wide">Rejoindre avec un code</label>',
-      '    <div class="flex gap-2">',
-      '      <input id="joinCode" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="ABC123"',
-      '        class="flex-1 bg-black/40 rounded-xl px-4 py-4 text-2xl font-extrabold tracking-[0.3em] text-center uppercase outline-none focus:ring-2 ring-neon-cyan" />',
-      '      <button id="joinBtn" class="px-5 rounded-xl bg-neon-cyan text-black font-extrabold text-xl active:animate-pop">GO</button>',
-      '    </div>',
+      '    <input id="joinCode" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="ABC123"',
+      '      class="w-full min-w-0 bg-black/40 rounded-xl px-3 py-4 text-2xl font-extrabold tracking-[0.25em] text-center uppercase outline-none focus:ring-2 ring-neon-cyan" />',
+      '    <button id="joinBtn" class="mt-2 w-full py-3 rounded-xl bg-neon-cyan text-black font-extrabold text-lg active:animate-pop">GO</button>',
       '    <button id="scanBtn" class="mt-3 w-full py-2.5 rounded-xl glass font-bold text-sm">📷 Scanner le QR code</button>',
       '  </div>',
       (standalone ? '' : '  <button id="installApp" class="mt-6 w-full py-3 rounded-xl glass font-bold text-sm">📲 Installer l\'app (plein écran)</button>'),
@@ -610,13 +616,23 @@
       '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Mode de jeu de départ</p>',
-      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-mode="classic">🔊 Classique</button>',
+      '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="turbo">⚡ Turbo (tous)</button>',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="fredonne">🎶 Fredonne</button>',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="year">📅 Année</button>',
       '  </div>',
+      '  <p class="text-white/40 text-xs mb-2">⚡ <b>Turbo</b> : tout le monde répond en même temps, les points (jusqu\'à 100) dépendent de ta rapidité — personne ne reste sur le banc.</p>',
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
+
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
+      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-dj="0">Off (moi seul)</button>',
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="5">Tous les 5</button>',
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="10">Tous les 10</button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).</p>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Que doit-on trouver ?</p>',
       '  <div class="grid grid-cols-3 gap-2 mb-2">',
@@ -634,9 +650,9 @@
       '  <div class="glass rounded-2xl p-4 mb-8">',
       '    <p class="text-sm font-bold uppercase text-white/60 mb-3">Points</p>',
       '    <div class="grid grid-cols-3 gap-3 text-center">',
-      '      <div><div class="text-xs text-white/50 mb-1">Bon buzz</div><input id="pBuzz" type="number" value="3" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-white/50 mb-1">Bonne rép.</div><input id="pBuzz" type="number" value="5" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '      <div><div class="text-xs text-white/50 mb-1">Bon vote</div><input id="pVote" type="number" value="1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
-      '      <div><div class="text-xs text-white/50 mb-1">Mauvais buzz</div><input id="pWrong" type="number" value="-1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-white/50 mb-1">Mauvaise rép.</div><input id="pWrong" type="number" value="-2" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '    </div>',
       '  </div>',
 
@@ -646,7 +662,14 @@
 
     $('#back').onclick = function () { location.hash = ''; };
 
-    var setupMode = 'classic', setupTeams = 0, setupAns = 'both';
+    var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0;
+    Array.prototype.forEach.call(document.querySelectorAll('.suDj'), function (b) {
+      b.onclick = function () {
+        setupDj = parseInt(b.getAttribute('data-dj'), 10) || 0;
+        Array.prototype.forEach.call(document.querySelectorAll('.suDj'), function (x) { x.className = x.className.replace('bg-neon-cyan text-black', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-cyan text-black');
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll('.suAns'), function (b) {
       b.onclick = function () {
         setupAns = b.getAttribute('data-ans');
@@ -683,6 +706,7 @@
       // route() appellera startHost() (entrée unique, refresh-safe).
       var st = initialState(genCode(), hostName, partyName, cfg);
       st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
+      st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
       st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
       store.set('hostGame', st);
       location.hash = 'host';
@@ -697,6 +721,8 @@
       reveal: null, suggest: null,
       buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
       buzzOpenAt: 0, buzzMs: null, voteAt: 0, tried: [],
+      answers: {}, grades: {}, turboSecs: 30, turboScores: null,
+      djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -748,6 +774,7 @@
         if (state.phase === 'buzzing' && !state.buzzer) {
           if (state.mode === 'fredonne' && state.source && state.source.id === p.id) return; // le fredonneur ne buzze pas
           if ((state.tried || []).indexOf(p.id) >= 0) return;                                 // déjà tenté sur cette manche
+          if (state.dj && state.dj.id === p.id) return;                                        // le DJ du moment connaît la réponse
           var pl = ensurePlayer(p.id, p.name);
           state.buzzer = { id: pl.id, name: pl.name };
           state.phase = 'answering';
@@ -764,6 +791,14 @@
           state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
           state.voteAt = Date.now(); // départ du temps de vote des autres joueurs
           beep(520, 0.12, 'sine');
+          publish();
+        }
+      } else if (p.action === 'race') {
+        // Mode Turbo : chacun envoie sa réponse, on horodate pour le barème vitesse.
+        if (state.phase === 'racing' && !state.answers[p.id] && !(state.dj && state.dj.id === p.id)) {
+          var rp = ensurePlayer(p.id, p.name);
+          state.answers[p.id] = { name: rp.name, text: String(p.text || '').slice(0, 120), ms: Date.now() - (state.buzzOpenAt || Date.now()) };
+          beep(660, 0.06, 'sine');
           publish();
         }
       } else if (p.action === 'vote') {
@@ -805,6 +840,7 @@
       state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
       state.reveal = null; state.suggest = null;
       state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
+      state.answers = {}; state.grades = {}; state.turboScores = null;
     }
     function armBuzz() {
       state.phase = 'armed';
@@ -821,7 +857,25 @@
     function launchRound() {
       state.round += 1;
       resetRound();
+      /* Rotation du DJ : tous les N titres, un joueur différent prend les commandes.
+         Le DJ choisit le morceau → il connaît la réponse → il ne marque pas ce tour-ci. */
+      if (state.djRotate) {
+        var dids = leaderboardArr(state.players).map(function (p) { return p.id; });
+        if (dids.length) {
+          var dEvery = state.djEvery || 5;
+          if (!state.dj || (state.djCount % dEvery === 0)) state._djIdx = state._djIdx + 1;
+          var did = dids[state._djIdx % dids.length];
+          state.dj = { id: did, name: state.players[did].name };
+          state.djCount = (state.djCount || 0) + 1;
+        }
+      } else { state.dj = null; }
       if (state.mode === 'year') { state.phase = 'year_guess'; if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview); publish(); return; }
+      if (state.mode === 'turbo') {
+        // Tout le monde répond en même temps : le chrono démarre pour tous.
+        state.phase = 'racing'; state.buzzOpenAt = Date.now();
+        if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
+        beep(740, 0.12, 'sine'); publish(); return;
+      }
       if (state.mode === 'fredonne') {
         var ids = leaderboardArr(state.players).map(function (p) { return p.id; });
         if (!ids.length) { toast('Aucun joueur pour fredonner', 'err'); state.round -= 1; state.phase = 'lobby'; publish(); return; }
@@ -873,16 +927,18 @@
       confetti(150); beep(880, 0.3, 'sine');
       publish();
     }
-    function validate(correct) {
+    function validate(correct, partial) {
       if (!state.buzzer) return;
       var b = state.players[state.buzzer.id];
-      if (b) b.score += correct ? state.config.pointsBuzz : state.config.pointsWrong;
+      // partial = mode « Titre + Artiste » avec une seule des deux trouvée → points réduits.
+      var gain = correct ? (partial ? Math.ceil(state.config.pointsBuzz / 2) : state.config.pointsBuzz) : state.config.pointsWrong;
+      if (b) b.score += gain;
       // Récompense les votes justes : 👍 si correct, 👎 si incorrect.
       Object.keys(state.votes).forEach(function (vid) {
         var agreed = (state.votes[vid] === 1) === correct;
         if (agreed && state.players[vid]) state.players[vid].score += state.config.pointsVote;
       });
-      state.result = { correct: correct };
+      state.result = { correct: correct, partial: !!partial, gain: gain };
       dzPause();
       // Reste-t-il quelqu'un qui pourrait rebondir ? (si oui et réponse fausse, on ne révèle pas encore)
       var triedNow = (state.tried || []).concat(state.buzzer ? [state.buzzer.id] : []);
@@ -914,6 +970,50 @@
       state.phase = 'buzzing'; state.buzzOpenAt = Date.now();
       if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
       beep(740, 0.12, 'sine');
+      publish();
+    }
+    /* ---- MODE TURBO : tout le monde répond, points sur 100 selon la vitesse ----
+       Barème pensé pour garder tout le monde en jeu :
+         • bonne réponse  = 60 pts garantis + jusqu'à 40 pts de bonus vitesse (max 100)
+         • à moitié       = la moitié du total obtenu
+         • faux / absent  = 0 (aucun malus : on reste motivé jusqu'au bout)
+         • le tout 1er à répondre juste gagne +10 « éclair » (plafonné à 100) */
+    function closeRacing() {
+      dzPause();
+      state.grades = {};
+      Object.keys(state.answers).forEach(function (id) {
+        var g = fuzzyHit(state.answers[id].text, roundTrack, state.answerMode);
+        state.grades[id] = g || 'ko'; // pré-notation auto, l'hôte peut corriger
+      });
+      state.phase = 'grading';
+      publish();
+    }
+    function turboPoints() {
+      var T = (state.turboSecs || 30) * 1000;
+      var ids = Object.keys(state.answers);
+      var goodSorted = ids.filter(function (id) { return state.grades[id] === 'ok' || state.grades[id] === 'half'; })
+        .sort(function (a, b) { return state.answers[a].ms - state.answers[b].ms; });
+      var first = goodSorted[0];
+      var out = {};
+      ids.forEach(function (id) {
+        var g = state.grades[id], a = state.answers[id];
+        if (g !== 'ok' && g !== 'half') { out[id] = { pts: 0, name: a.name, ms: a.ms, grade: g }; return; }
+        var speed = Math.max(0, 1 - (a.ms / T));           // 1 = instantané, 0 = fin de fenêtre
+        var pts = 60 + Math.round(40 * speed);              // 60 → 100
+        if (id === first) pts = Math.min(100, pts + 10);    // bonus éclair au 1er juste
+        if (g === 'half') pts = Math.round(pts / 2);        // une seule des deux trouvée
+        out[id] = { pts: pts, name: a.name, ms: a.ms, grade: g, first: id === first };
+      });
+      return out;
+    }
+    function applyTurbo() {
+      var res = turboPoints();
+      Object.keys(res).forEach(function (id) { if (state.players[id]) state.players[id].score += res[id].pts; });
+      state.turboScores = res;
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      state.phase = 'turbo_reveal';
+      state.history.push({ round: state.round, turbo: res });
+      confetti(180); beep(880, 0.3, 'sine');
       publish();
     }
     function endGame() { dzPause(); state.phase = 'ended'; confetti(240); publish(); }
@@ -1043,7 +1143,7 @@
         '</div>'
       ].join('');
 
-      var MODES = [{ id: 'classic', name: '🔊 Classique' }, { id: 'fredonne', name: '🎶 Fredonne' }, { id: 'year', name: '📅 Année' }];
+      var MODES = [{ id: 'classic', name: '🔊 Classique' }, { id: 'turbo', name: '⚡ Turbo' }, { id: 'fredonne', name: '🎶 Fredonne' }, { id: 'year', name: '📅 Année' }];
       var modeBar = [
         '<div class="glass rounded-2xl p-3 mb-4">',
         '  <div class="text-xs font-bold uppercase text-white/50 mb-2">🎮 Mode de jeu</div>',
@@ -1053,14 +1153,14 @@
         '</div>'
       ].join('');
 
-      var isFred = s.mode === 'fredonne', isYear = s.mode === 'year';
-      var modeIcon = isYear ? '📅' : isFred ? '🎶' : '🎵';
+      var isFred = s.mode === 'fredonne', isYear = s.mode === 'year', isTurbo = s.mode === 'turbo';
+      var modeIcon = isYear ? '📅' : isFred ? '🎶' : isTurbo ? '⚡' : '🎵';
       var fredEvery = s.fredEvery || 10;
       var fredTag = (isFred && s.fredCount) ? ' · chanson ' + (((s.fredCount - 1) % fredEvery) + 1) + '/' + fredEvery : '';
 
       // Lecteur Deezer (modes à enceinte uniquement)
-      var deezerOn = prefs.deezer && (s.mode === 'classic' || s.mode === 'year');
-      var prepPhase = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal');
+      var deezerOn = prefs.deezer && (s.mode === 'classic' || s.mode === 'year' || s.mode === 'turbo');
+      var prepPhase = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal' || s.phase === 'turbo_reveal');
       var dzBar = '';
       if (deezerOn && prepPhase) {
         dzBar = '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
@@ -1068,7 +1168,7 @@
           : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 Choisir un morceau (Deezer)</button>') + '</div>';
       }
       var dzCtrl = '';
-      if (deezerOn && roundTrack && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess')) {
+      if (deezerOn && roundTrack && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess' || s.phase === 'racing' || s.phase === 'grading')) {
         dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
           + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'
           + '<button id="dzReplay" class="px-3 py-2 rounded-lg glass text-sm">🔁 Rejouer</button>'
@@ -1139,7 +1239,67 @@
           '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
           '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
           '  </div>',
+          ((s.answerMode || 'both') === 'both'
+            ? '  <button id="half" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">≈ À moitié (+' + Math.ceil(s.config.pointsBuzz / 2) + ')</button>'
+            : ''),
           (canDecide ? '' : '  <button id="skipWait" class="mt-3 text-white/40 text-xs underline">Trancher maintenant</button>'),
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'racing') {
+        var got = Object.keys(s.answers || {}).length;
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
+          '  <div class="text-5xl mb-2 animate-pulse">⚡</div>',
+          '  <p class="text-2xl font-extrabold text-neon-lime">TOUT LE MONDE RÉPOND !</p>',
+          '  <p class="text-white/50 mb-3">Plus c\'est rapide, plus ça rapporte (jusqu\'à 100 pts)</p>',
+          '  <div class="text-3xl font-extrabold text-neon-cyan">' + got + '/' + lb.length + '</div><p class="text-white/40 text-xs mb-4">réponses reçues</p>',
+          '  <div class="flex flex-wrap justify-center gap-2 mb-4">' + lb.map(function (p) {
+                var a = (s.answers || {})[p.id];
+                return '<span class="px-2.5 py-1 rounded-full text-xs font-bold ' + (a ? 'bg-neon-lime/25 ring-1 ring-neon-lime' : 'bg-black/30 text-white/50') + '">' + esc(p.name) + (a ? ' ' + (a.ms / 1000).toFixed(1) + 's' : ' …') + '</span>';
+              }).join('') + '</div>',
+          '  <button id="closeRace" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">Clore et corriger ✍️</button>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'grading') {
+        var order = Object.keys(s.answers || {}).sort(function (a, b) { return s.answers[a].ms - s.answers[b].ms; });
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-5 animate-slidein">',
+          '  <p class="bt-title text-lg font-extrabold glow-cyan text-center mb-1">CORRECTION</p>',
+          '  <p class="text-white/50 text-xs text-center mb-4">Pré-notée automatiquement — tape pour corriger</p>',
+               (order.length ? order.map(function (id, i) {
+                 var a = s.answers[id], g = s.grades[id];
+                 return '<div class="rounded-xl bg-black/25 p-3 mb-2">'
+                   + '<div class="flex items-center gap-2 mb-2"><span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold" style="background:' + avatarGrad(a.name) + '">' + esc(initials(a.name)) + '</span>'
+                   + '<span class="font-bold text-sm flex-1 truncate">' + esc(a.name) + '</span>'
+                   + '<span class="text-neon-cyan text-xs font-bold">' + (i === 0 ? '⚡ ' : '') + (a.ms / 1000).toFixed(1) + 's</span></div>'
+                   + '<div class="text-white/80 text-sm mb-2 truncate">' + (a.text ? '« ' + esc(a.text) + ' »' : '<span class="text-white/30">(vide)</span>') + '</div>'
+                   + '<div class="grid grid-cols-3 gap-1">'
+                   + '<button class="gradeBtn py-1.5 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓</button>'
+                   + '<button class="gradeBtn py-1.5 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈</button>'
+                   + '<button class="gradeBtn py-1.5 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗</button>'
+                   + '</div></div>';
+               }).join('') : '<p class="text-white/40 text-center py-4">Personne n\'a répondu.</p>'),
+          '  <button id="applyTurbo" class="mt-3 w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Attribuer les points 🏅</button>',
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'turbo_reveal') {
+        var ts = s.turboScores || {};
+        var rankT = Object.keys(ts).sort(function (a, b) { return ts[b].pts - ts[a].pts || ts[a].ms - ts[b].ms; });
+        phaseBlock = [
+          '<div class="glass rounded-2xl p-5 text-center animate-slidein">',
+          '  <div class="text-4xl mb-1">🏅</div><p class="bt-title text-xl font-extrabold glow-cyan">POINTS DE LA MANCHE</p>',
+               revealCard(s.reveal),
+          '  <div class="mt-4 text-left">' + (rankT.length ? rankT.map(function (id) {
+                 var r = ts[id];
+                 return '<div class="flex items-center gap-2 rounded-xl px-3 py-2 mb-1.5 ' + (r.pts > 0 ? 'bg-neon-lime/10' : 'bg-black/25') + '">'
+                   + '<span class="flex-1 font-bold text-sm truncate">' + (r.first ? '⚡ ' : '') + esc(r.name) + '</span>'
+                   + '<span class="text-white/40 text-xs">' + (r.ms / 1000).toFixed(1) + 's</span>'
+                   + '<span class="font-extrabold ' + (r.pts > 0 ? 'text-neon-gold' : 'text-white/30') + ' w-12 text-right">+' + r.pts + '</span></div>';
+               }).join('') : '<p class="text-white/40 text-center">Aucune réponse</p>') + '</div>',
+          '  <div class="grid grid-cols-2 gap-3 mt-4">',
+          '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
+          '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
+          '  </div>',
           '</div>'
         ].join('');
       } else if (s.phase === 'judging') {
@@ -1190,7 +1350,7 @@
           '<div class="glass rounded-2xl p-8 text-center animate-slidein">',
           '  <div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div>',
           '  <p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
-          '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + (s.result.correct ? ' +' + s.config.pointsBuzz : ' ' + (s.config.pointsWrong >= 0 ? '+' : '') + s.config.pointsWrong) + ' pts</p>',
+          '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + ' ' + ((s.result.gain != null ? s.result.gain : 0) >= 0 ? '+' : '') + (s.result.gain != null ? s.result.gain : 0) + ' pts' + (s.result.partial ? ' <span class="text-neon-gold">(à moitié)</span>' : '') + '</p>',
                revealCard(s.reveal),
           (!s.result.correct && !s.reveal
             ? '  <button id="reopen" class="mt-5 w-full py-3.5 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">🔔 Rebond : rouvrir le buzz aux autres</button>'
@@ -1226,6 +1386,7 @@
         '      <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
         '    </div>',
         '  </div>',
+        (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
         (showTheme ? modeBar : ''),
         (showTheme ? themeBar : ''),
         dzBar,
@@ -1250,7 +1411,13 @@
       bind('#forceVote', function () { if (s.buzzOpenAt) s.buzzMs = Date.now() - s.buzzOpenAt; s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; s.voteAt = Date.now(); publish(); });
       bind('#ok', function () { validate(true); });
       bind('#ko', function () { validate(false); });
+      bind('#half', function () { validate(true, true); });
       bind('#reopen', reopenBuzz);
+      bind('#closeRace', closeRacing);
+      bind('#applyTurbo', applyTurbo);
+      Array.prototype.forEach.call(document.querySelectorAll('.gradeBtn'), function (b) {
+        b.onclick = function () { s.grades[b.getAttribute('data-id')] = b.getAttribute('data-g'); publish(); };
+      });
       bind('#skipWait', function () { s.voteAt = Date.now() - ((s.config && s.config.voteSecs || 10) * 1000); renderHost(); });
       bind('#next', launchRound);
       bind('#end', endGame);
@@ -1350,11 +1517,55 @@
       var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
       var isBuzzer = s.buzzer && s.buzzer.id === ME;
       var am = s.answerMode || 'both'; // both | title | artist
+      var imDJ = s.dj && s.dj.id === ME; // je suis le DJ de la série en cours
       var isSource = s.source && s.source.id === ME;
 
       var center = '';
-      if (s.phase === 'lobby') {
+      // Si je suis le DJ de la série, je ne joue pas : je choisis les morceaux.
+      if (imDJ && s.phase !== 'lobby' && s.phase !== 'ended') {
+        center = [
+          '<div class="text-center animate-slidein">',
+          '  <div class="text-6xl mb-3 animate-float">🎧</div>',
+          '  <p class="text-2xl font-extrabold text-neon-cyan glow-cyan">C\'EST TOI LE DJ !</p>',
+          '  <p class="text-white/60 mt-2">Tu choisis les morceaux de cette série.</p>',
+          '  <p class="text-white/40 text-sm mt-1">Titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' · tu ne marques pas de points sur ta série</p>',
+          (s.reveal ? revealCard(s.reveal) : ''),
+          '</div>'
+        ].join('');
+      } else if (s.phase === 'lobby') {
         center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-float">🍿</div><p class="text-xl font-bold">En attente du lancement…</p><p class="text-white/50 mt-1">L\'hôte va démarrer la partie</p></div>';
+      } else if (s.phase === 'racing') {
+        var mineA = (s.answers || {})[ME];
+        center = mineA
+          ? '<div class="text-center animate-slidein"><div class="text-6xl mb-2">⚡</div><p class="text-2xl font-extrabold text-neon-lime">Envoyé en ' + (mineA.ms / 1000).toFixed(1) + 's !</p><p class="text-white/60 mt-1">« ' + esc(mineA.text || '—') + ' »</p><p class="text-white/40 text-sm mt-3">Plus tu as été rapide, plus tu marques…</p></div>'
+          : [
+            '<div class="w-full animate-slidein text-center">',
+            '  <p class="text-2xl font-extrabold text-neon-lime mb-1">⚡ VITE !</p>',
+            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'artist' ? 'L\'artiste' : 'Le titre') + ' — jusqu\'à 100 pts</p>',
+            (am === 'both'
+              ? '  <input id="raceTitle" maxlength="80" placeholder="💿 Titre…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
+                + '<input id="raceArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-3" />'
+              : '  <input id="raceOne" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />'),
+            '  <button id="raceSend" class="btn-glow w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Envoyer ⚡</button>',
+            '</div>'
+          ].join('');
+      } else if (s.phase === 'grading') {
+        center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3 animate-pulse">✍️</div><p class="text-xl font-bold">Correction en cours…</p><p class="text-white/50 mt-1">L\'animateur vérifie les réponses</p></div>';
+      } else if (s.phase === 'turbo_reveal') {
+        var tsP = s.turboScores || {}, myR = tsP[ME];
+        var rankP = Object.keys(tsP).sort(function (a, b) { return tsP[b].pts - tsP[a].pts || tsP[a].ms - tsP[b].ms; });
+        center = [
+          '<div class="w-full text-center animate-slidein">',
+          '  <div class="text-5xl mb-1">' + (myR && myR.pts > 0 ? '🏅' : '😶') + '</div>',
+          '  <p class="text-3xl font-extrabold ' + (myR && myR.pts > 0 ? 'text-neon-gold' : 'text-white/50') + '">' + (myR ? '+' + myR.pts + ' pts' : 'Pas de réponse') + '</p>',
+          (myR ? '  <p class="text-white/50 text-sm">en ' + (myR.ms / 1000).toFixed(1) + 's' + (myR.first ? ' · ⚡ le plus rapide !' : '') + '</p>' : ''),
+               revealCard(s.reveal),
+          '  <div class="mt-4 text-left">' + rankP.slice(0, 5).map(function (id) {
+                var r = tsP[id];
+                return '<div class="flex items-center gap-2 rounded-xl px-3 py-1.5 mb-1 ' + (id === ME ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/20') + '"><span class="flex-1 font-bold text-sm truncate">' + (r.first ? '⚡ ' : '') + esc(r.name) + '</span><span class="text-white/40 text-xs">' + (r.ms / 1000).toFixed(1) + 's</span><span class="font-extrabold text-neon-gold w-10 text-right">+' + r.pts + '</span></div>';
+              }).join('') + '</div>',
+          '</div>'
+        ].join('');
       } else if (s.phase === 'armed') {
         if (s.mode === 'fredonne' && isSource) center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3">🎶</div><p class="text-2xl font-extrabold text-neon-lime">À toi de fredonner !</p><p class="text-white/55 mt-1">Choisis un morceau dans ta tête…</p></div>';
         else center = buzzButton(true, '⏳', 'Prépare-toi…');
@@ -1458,6 +1669,24 @@
       // Liaisons d'événements
       bind('#leave', function () { location.hash = ''; });
       bind('#gear', openSettings);
+      // Mode Turbo : envoi de la réponse par tout le monde
+      var rT = $('#raceTitle'), rA = $('#raceArtist'), rO = $('#raceOne');
+      if (rT || rO) {
+        (rT || rO).focus();
+        var raceCollect = function () {
+          if (rT || rA) { var ti = (rT && rT.value.trim()) || '', ar = (rA && rA.value.trim()) || ''; return (ti && ar) ? (ti + ' — ' + ar) : (ti || ar); }
+          return rO ? rO.value.trim() : '';
+        };
+        var raceSend = function () {
+          var v = raceCollect();
+          if (!v) { toast('Écris ta réponse', 'err'); vibrate(60); return; }
+          chan.sendIntent({ action: 'race', id: ME, name: name, text: v });
+          beep(880, 0.08, 'sine'); vibrate(40);
+        };
+        bind('#raceSend', raceSend);
+        [rT, rA, rO].forEach(function (el) { if (el) el.onkeydown = function (e) { if (e.key === 'Enter') raceSend(); }; });
+      }
+
       var ans = $('#ans'), ansT = $('#ansTitle'), ansA = $('#ansArtist');
       if (ans || ansT) {
         (ansT || ans).focus();

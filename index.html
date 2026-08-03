@@ -655,11 +655,13 @@
 
       '  <div class="glass rounded-2xl p-4 mb-8">',
       '    <p class="text-sm font-bold uppercase text-white/60 mb-3">Points</p>',
-      '    <div class="grid grid-cols-3 gap-3 text-center">',
-      '      <div><div class="text-xs text-white/50 mb-1">Bonne rép.</div><input id="pBuzz" type="number" value="5" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
-      '      <div><div class="text-xs text-white/50 mb-1">Bon vote</div><input id="pVote" type="number" value="1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
-      '      <div><div class="text-xs text-white/50 mb-1">Mauvaise rép.</div><input id="pWrong" type="number" value="-2" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '    <div class="grid grid-cols-2 gap-3 text-center">',
+      '      <div><div class="text-xs text-neon-lime mb-1">✓ Bonne réponse</div><input id="pBuzz" type="number" value="5" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-rose-400 mb-1">✗ Mauvaise réponse</div><input id="pWrong" type="number" value="-2" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-neon-lime mb-1">👍 Bon vote</div><input id="pVote" type="number" value="2" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <div><div class="text-xs text-rose-400 mb-1">👎 Mauvais vote</div><input id="pVoteWrong" type="number" value="-1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '    </div>',
+      '    <p class="text-white/35 text-xs mt-2 text-center">Le vote récompense ceux qui jugent juste : bien voté = points, mal voté = malus.</p>',
       '  </div>',
 
       '  <button id="create" class="w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet shadow-lg active:animate-pop">Lancer la partie 🚀</button>',
@@ -706,6 +708,7 @@
         pointsBuzz: parseInt($('#pBuzz').value, 10) || 0,
         pointsVote: parseInt($('#pVote').value, 10) || 0,
         pointsWrong: parseInt($('#pWrong').value, 10) || 0,
+        pointsVoteWrong: parseInt($('#pVoteWrong').value, 10) || 0,
         voteSecs: Math.max(0, parseInt($('#voteSecs').value, 10) || 0)
       };
       // On enregistre l'état initial puis on bascule sur la route hôte :
@@ -983,10 +986,11 @@
       // partial = mode « Titre + Artiste » avec une seule des deux trouvée → points réduits.
       var gain = correct ? (partial ? Math.ceil(state.config.pointsBuzz / 2) : state.config.pointsBuzz) : state.config.pointsWrong;
       if (b) b.score += gain;
-      // Récompense les votes justes : 👍 si correct, 👎 si incorrect.
+      // Le vote est un pari : bien juger rapporte, mal juger coûte.
       Object.keys(state.votes).forEach(function (vid) {
         var agreed = (state.votes[vid] === 1) === correct;
-        if (agreed && state.players[vid]) state.players[vid].score += state.config.pointsVote;
+        if (!state.players[vid]) return;
+        state.players[vid].score += agreed ? state.config.pointsVote : (state.config.pointsVoteWrong || 0);
       });
       state.result = { correct: correct, partial: !!partial, gain: gain };
       dzPause();
@@ -1724,7 +1728,8 @@
             '  <div class="text-2xl font-extrabold mb-5">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-lg">(à l\'oral)</span>') + '</div>',
             voted
               ? '<p class="text-neon-cyan font-bold">Vote enregistré ✓</p>'
-              : '<div class="grid grid-cols-2 gap-4"><button id="up" class="py-8 rounded-2xl bg-neon-lime text-black text-4xl font-extrabold active:animate-pop">👍</button><button id="down" class="py-8 rounded-2xl bg-rose-500 text-4xl font-extrabold active:animate-pop">👎</button></div>',
+              : '<div class="grid grid-cols-2 gap-4"><button id="up" class="py-8 rounded-2xl bg-neon-lime text-black text-4xl font-extrabold active:animate-pop">👍</button><button id="down" class="py-8 rounded-2xl bg-rose-500 text-4xl font-extrabold active:animate-pop">👎</button></div>'
+                + '<p class="text-white/40 text-xs mt-3">Juge bien : +' + s.config.pointsVote + ' si tu as raison, ' + (s.config.pointsVoteWrong || 0) + ' si tu te trompes</p>',
             '</div>'
           ].join('');
         }

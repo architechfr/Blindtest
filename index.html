@@ -550,6 +550,29 @@
     return supa;
   }
 
+  /* Bandeau d'état de la connexion temps réel (visible en haut de l'écran). */
+  var linkEl = null, linkState = 'wait';
+  function setLink(st) {
+    if (st === linkState) return;
+    linkState = st;
+    if (!linkEl) {
+      linkEl = document.createElement('div');
+      linkEl.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:90;text-align:center;font-size:12px;font-weight:700;padding:5px 8px;transition:opacity .3s;pointer-events:none';
+      document.body.appendChild(linkEl);
+    }
+    if (st === 'ok') {
+      linkEl.textContent = '✓ Connecté';
+      linkEl.style.background = 'rgba(163,230,53,.9)'; linkEl.style.color = '#0b0014';
+      setTimeout(function () { if (linkState === 'ok') linkEl.style.opacity = '0'; }, 1200);
+    } else {
+      linkEl.style.opacity = '1';
+      if (st === 'down') { linkEl.textContent = '⚠️ Connexion perdue — reconnexion…'; linkEl.style.background = 'rgba(244,63,94,.95)'; linkEl.style.color = '#fff'; }
+      else { linkEl.textContent = '⏳ Connexion…'; linkEl.style.background = 'rgba(139,92,246,.9)'; linkEl.style.color = '#fff'; }
+    }
+  }
+  window.addEventListener('offline', function () { setLink('down'); });
+  window.addEventListener('online', function () { setLink('wait'); });
+
   /* Ouvre un canal de partie. handlers = { onIntent, onState, onPresence, onReady } */
   function openChannel(code, identity, handlers) {
     var ch = client().channel('blindtest-' + code, {
@@ -565,6 +588,8 @@
       ch.on('presence', { event: 'leave' }, function (e) { handlers.onPresence(ch.presenceState(), e); });
     }
     ch.subscribe(function (status) {
+      // Statut visible : sans ça, une coupure réseau se traduit par un écran figé sans explication.
+      setLink(status === 'SUBSCRIBED' ? 'ok' : (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') ? 'down' : 'wait');
       if (status === 'SUBSCRIBED') {
         ch.track({ id: identity.id, name: identity.name, role: identity.role, at: Date.now() });
         if (handlers.onReady) handlers.onReady(ch);
@@ -655,7 +680,8 @@
       '    <button id="joinBtn" class="mt-2 w-full py-3 rounded-xl bg-neon-cyan text-black font-extrabold text-lg active:animate-pop">GO</button>',
       '    <button id="scanBtn" class="mt-3 w-full py-2.5 rounded-xl glass font-bold text-sm">📷 Scanner le QR code</button>',
       '  </div>',
-      (standalone ? '' : '  <button id="installApp" class="mt-6 w-full py-3 rounded-xl glass font-bold text-sm">📲 Installer l\'app (plein écran)</button>'),
+      '  <button id="homeHelp" class="mt-4 w-full py-2.5 rounded-xl glass font-bold text-sm text-white/70">❓ Comment on joue ?</button>',
+      (standalone ? '' : '  <button id="installApp" class="mt-2 w-full py-3 rounded-xl glass font-bold text-sm">📲 Installer l\'app (plein écran)</button>'),
       '  <p class="text-white/30 text-xs mt-8 text-center">Temps réel via Supabase · AXION</p>',
       '</div>'
     ].join('');
@@ -668,6 +694,7 @@
     bind('#scanBtn', openScanner);
     bind('#resumeJoin', function () { if (lj) { beep(660, 0.1, 'sine'); startPlayer(lj.code, lj.name); } });
     bind('#dropJoin', function () { store.del('lastJoin'); renderHome(); });
+    bind('#homeHelp', openHelp);
     var code = $('#joinCode');
     code.oninput = function () { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
     function join() {
@@ -1276,6 +1303,56 @@
       if (left === 0) renderHost(); // fin du décompte : on débloque les boutons
     }, 1000);
 
+    /* Gestion d'un joueur : corriger son score, le renommer, l'exclure.
+       Indispensable en soirée réelle (erreur de validation, faute de frappe…). */
+    function openPlayerAdmin(pid) {
+      var el = document.getElementById('picker'); if (!el) return;
+      var p = state.players[pid]; if (!p) return;
+      el.innerHTML = [
+        '<div class="set-panel p-5 animate-slidein">',
+        '  <div class="flex items-center justify-between mb-4"><h2 class="bt-title text-lg font-extrabold glow-cyan">JOUEUR</h2><button id="paClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+        '  <div class="flex items-center gap-3 mb-4"><span class="w-12 h-12 rounded-full flex items-center justify-center font-extrabold" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</span>',
+        '    <div class="flex-1 min-w-0"><input id="paName" value="' + esc(p.name) + '" maxlength="20" class="w-full bg-black/40 rounded-lg px-3 py-2 font-bold outline-none focus:ring-2 ring-neon-cyan" />',
+        '    <div class="text-white/40 text-xs mt-1">' + (p.played || 0) + ' titre(s) jouable(s) · ' + (p.djTurns || 0) + ' en DJ</div></div></div>',
+        '  <div class="glass rounded-2xl p-4 text-center mb-4">',
+        '    <div class="text-white/50 text-xs uppercase font-bold mb-1">Score</div>',
+        '    <div class="text-5xl font-extrabold text-neon-gold mb-3">' + p.score + '</div>',
+        '    <div class="grid grid-cols-4 gap-2">',
+        '      <button class="paAdj py-3 rounded-xl bg-rose-500/80 font-extrabold" data-d="-5">−5</button>',
+        '      <button class="paAdj py-3 rounded-xl bg-rose-500/60 font-extrabold" data-d="-1">−1</button>',
+        '      <button class="paAdj py-3 rounded-xl bg-neon-lime/70 text-black font-extrabold" data-d="1">+1</button>',
+        '      <button class="paAdj py-3 rounded-xl bg-neon-lime text-black font-extrabold" data-d="5">+5</button>',
+        '    </div>',
+        '  </div>',
+        '  <div class="grid grid-cols-2 gap-2">',
+        '    <button id="paSave" class="py-3 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">Enregistrer</button>',
+        '    <button id="paKick" class="py-3 rounded-xl glass text-rose-300 font-bold">Retirer du jeu</button>',
+        '  </div>',
+        '</div>'
+      ].join('');
+      el.classList.remove('hidden');
+      el.onclick = function (e) { if (e.target === el) closePicker(); };
+      bind('#paClose', closePicker);
+      Array.prototype.forEach.call(el.querySelectorAll('.paAdj'), function (b) {
+        b.onclick = function () {
+          p.score += parseInt(b.getAttribute('data-d'), 10) || 0;
+          beep(660, 0.05, 'sine'); publish(); openPlayerAdmin(pid);
+        };
+      });
+      bind('#paSave', function () {
+        var v = ($('#paName') || {}).value;
+        if (v && v.trim()) p.name = v.trim().slice(0, 20);
+        publish(); closePicker(); toast('Joueur mis à jour', 'ok');
+      });
+      bind('#paKick', function () {
+        if (!confirm('Retirer ' + p.name + ' de la partie ? Son score sera perdu.')) return;
+        delete state.players[pid];
+        if (state.dj && state.dj.id === pid) state.dj = null;
+        if (state.source && state.source.id === pid) state.source = null;
+        publish(); closePicker(); toast('Joueur retiré', 'info');
+      });
+    }
+
     current = {
       destroy: function () { if (chan) chan.close(); dzPause(); clearInterval(voteTick); }
     };
@@ -1557,7 +1634,7 @@
         dzCtrl,
         '  <div class="mb-5">' + phaseBlock + '</div>',
         '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
-        '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/40">' + esc(s.partyName) + '</span></div>',
+        '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/35">✏️ tape un joueur pour corriger</span></div>',
              (s.teams ? renderTeams(s) : ''),
              renderLeaderboard(lb, present, null, fairArg),
              (fairArg ? '<p class="text-white/45 text-xs mt-3 text-center">⚖️ Classement <b>équitable</b> : les scores sont ramenés au même nombre de titres jouables (chacun n\'a pas été DJ le même nombre de fois).</p>' : ''),
@@ -1601,6 +1678,11 @@
       bind('#export', function () { exportLeaderboard(s); });
       bind('#gear', openSettings);
       bind('#inviteBtn', openInvite);
+      // Taper un joueur du classement (côté hôte) = corriger son score / le renommer / l'exclure
+      Array.prototype.forEach.call(document.querySelectorAll('#lbCapture .lbRow'), function (row) {
+        row.style.cursor = 'pointer';
+        row.onclick = function () { openPlayerAdmin(row.getAttribute('data-pid')); };
+      });
       bind('#hostBuzz', hostBuzz);
       var hAns = $('#hostAns'); if (hAns) hAns.focus();
       bind('#hostSend', function () { var e = $('#hostAns'); hostAnswer(e ? e.value.trim() : ''); });
@@ -2076,7 +2158,7 @@
       var sc = val(p);
       var pct = sc > 0 ? Math.max(8, Math.round((sc / max) * 100)) : 0;
       return [
-        '<div class="flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/25') + '">',
+        '<div class="lbRow flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/25') + '" data-pid="' + esc(p.id) + '">',
         '  <div class="w-6 text-center text-lg font-extrabold ' + (i < 3 ? '' : 'text-white/40') + '">' + (medals[i] || (i + 1)) + '</div>',
         '  <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ' + (on ? '' : 'opacity-40') + '" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</div>',
         (typeof p.team === 'number' ? '  <span class="w-2.5 h-2.5 rounded-full shrink-0 -ml-1.5" title="Équipe ' + (TEAM_NAMES[p.team] || '') + '" style="background:' + (TEAM_COLORS[p.team] || '#888') + '"></span>' : ''),
@@ -2269,6 +2351,9 @@
       '    <button id="setFs" class="py-3 rounded-xl glass font-bold text-sm ' + (deferredPrompt ? '' : 'col-span-2') + '">⛶ Plein écran</button>',
       '  </div>',
 
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Aide</p>',
+      '  <button id="setHelp" class="w-full py-3 rounded-xl glass font-bold flex items-center justify-center gap-2">❓ Comment on joue ?</button>',
+
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Historique</p>',
       '  <button id="setHistory" class="w-full py-3 rounded-xl glass font-bold flex items-center justify-center gap-2">📜 Mes parties jouées (' + (store.get('history', []) || []).length + ')</button>',
 
@@ -2317,6 +2402,52 @@
     bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
     bind('#setFeedback', openFeedback);
     bind('#setHistory', openHistory);
+    bind('#setHelp', openHelp);
+  }
+
+  /* Règles du jeu — évite que les joueurs restent bloqués sans savoir quoi faire. */
+  function openHelp() {
+    if (!settingsEl) return;
+    var sec = function (t, body) { return '<div class="glass rounded-2xl p-4 mb-2"><p class="font-extrabold text-neon-cyan mb-1">' + t + '</p><div class="text-white/70 text-sm leading-relaxed">' + body + '</div></div>'; };
+    settingsEl.innerHTML = [
+      '<div class="set-panel p-5 animate-slidein">',
+      '  <div class="flex items-center justify-between mb-3">',
+      '    <button id="heBack" class="text-white/60 text-sm">← Retour</button>',
+      '    <h2 class="bt-title text-lg font-extrabold glow-cyan">COMMENT ON JOUE</h2>',
+      '    <button id="heClose" class="w-9 h-9 rounded-full glass text-lg">✕</button>',
+      '  </div>',
+      sec('🎬 En 30 secondes',
+        '1. Un joueur <b>crée la partie</b> et branche son téléphone sur l\'enceinte.<br>'
+        + '2. Les autres <b>scannent le QR</b> (ou tapent le code).<br>'
+        + '3. Le DJ lance un morceau, tout le monde cherche le titre.'),
+      sec('🎧 Le DJ tournant',
+        'Si la <b>rotation DJ</b> est activée, chacun devient DJ à son tour (tous les 5 ou 10 titres).<br>'
+        + '• Le DJ <b>choisit et lance</b> les morceaux depuis son appli.<br>'
+        + '• Il <b>valide les réponses</b> sur son propre téléphone (il est le seul à connaître le titre).<br>'
+        + '• Il <b>ne marque pas de points</b> pendant sa série — c\'est normal, le classement final le compense.'),
+      sec('🎮 Les modes',
+        '<b>🔊 Classique</b> — le 1<sup>er</sup> qui buzze répond.<br>'
+        + '<b>⚡ Turbo</b> — tout le monde répond en même temps, jusqu\'à 100 pts selon la rapidité.<br>'
+        + '<b>🎶 Fredonne</b> — pas de musique : un joueur fredonne, les autres buzzent.<br>'
+        + '<b>📅 Année</b> — devine l\'année de sortie, le plus proche gagne.'),
+      sec('🏆 Les points',
+        'Bonne réponse <b class="text-neon-lime">+5</b> · Mauvaise <b class="text-rose-400">−2</b><br>'
+        + 'Bon vote <b class="text-neon-lime">+2</b> · Mauvais vote <b class="text-rose-400">−1</b><br>'
+        + '<span class="text-white/50 text-xs">Voter est un pari : écoute bien même quand ce n\'est pas ton tour !</span>'),
+      sec('🤷 Je ne sais pas',
+        'En mode Turbo, un bouton <b>« Je passe »</b> permet de ne pas bloquer la manche.<br>'
+        + 'En Classique, il suffit de <b>ne pas buzzer</b>.'),
+      sec('🔋 Ça chauffe / ça rame ?',
+        'Active <b>Économie de batterie</b> dans les réglages : ça coupe les animations lourdes.<br>'
+        + 'Pense aussi à <b>installer l\'app</b> (plein écran, plus stable).'),
+      '  <button id="heDone" class="btn-glow w-full mt-2 py-3.5 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">J\'ai compris 👍</button>',
+      '</div>'
+    ].join('');
+    settingsEl.classList.remove('hidden');
+    settingsEl.onclick = function (e) { if (e.target === settingsEl) closeSettings(); };
+    bind('#heBack', openSettings);
+    bind('#heClose', closeSettings);
+    bind('#heDone', closeSettings);
   }
 
   /* Historique des parties terminées. */

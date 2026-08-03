@@ -764,7 +764,9 @@
         // on ne doit JAMAIS se baser sur le classement, qui bouge à chaque point.
         var maxOrd = -1;
         Object.keys(state.players).forEach(function (k) { if (typeof state.players[k].ord === 'number' && state.players[k].ord > maxOrd) maxOrd = state.players[k].ord; });
-        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null, ord: maxOrd + 1 };
+        // played = manches où le joueur POUVAIT marquer (il n'était ni DJ ni fredonneur).
+        // djTurns = nombre de titres passés aux commandes. Sert à l'équité du classement.
+        state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null, ord: maxOrd + 1, played: 0, djTurns: 0 };
         if (state.teams) assignTeam(state.players[id]);
       } else if (name) state.players[id].name = name;
       return state.players[id];
@@ -903,13 +905,7 @@
           state.djCount = (state.djCount || 0) + 1;
         }
       } else { state.dj = null; }
-      if (state.mode === 'year') { state.phase = 'year_guess'; if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview); publish(); return; }
-      if (state.mode === 'turbo') {
-        // Tout le monde répond en même temps : le chrono démarre pour tous.
-        state.phase = 'racing'; state.buzzOpenAt = Date.now();
-        if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
-        beep(740, 0.12, 'sine'); publish(); return;
-      }
+
       if (state.mode === 'fredonne') {
         var ids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
         if (!ids.length) { toast('Aucun joueur pour fredonner', 'err'); state.round -= 1; state.phase = 'lobby'; publish(); return; }
@@ -921,6 +917,24 @@
         state.fredCount = (state.fredCount || 0) + 1;
       } else {
         state.source = null;
+      }
+
+      /* ÉQUITÉ : on comptabilise, pour chaque joueur, s'il pouvait marquer sur ce titre.
+         Celui qui est aux commandes (DJ ou fredonneur) ne peut pas → il ne doit pas être
+         pénalisé au classement final (voir fairScore()). */
+      Object.keys(state.players).forEach(function (pid) {
+        var atControls = (state.dj && state.dj.id === pid) || (state.source && state.source.id === pid);
+        var pl = state.players[pid];
+        if (atControls) pl.djTurns = (pl.djTurns || 0) + 1;
+        else pl.played = (pl.played || 0) + 1;
+      });
+
+      if (state.mode === 'year') { state.phase = 'year_guess'; if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview); publish(); return; }
+      if (state.mode === 'turbo') {
+        // Tout le monde répond en même temps : le chrono démarre pour tous.
+        state.phase = 'racing'; state.buzzOpenAt = Date.now();
+        if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
+        beep(740, 0.12, 'sine'); publish(); return;
       }
       armBuzz();
     }
@@ -1052,8 +1066,9 @@
     }
     function endGame() { dzPause(); state.phase = 'ended'; confetti(240); publish(); }
     function replay() {
-      Object.keys(state.players).forEach(function (id) { state.players[id].score = 0; });
+      Object.keys(state.players).forEach(function (id) { var p = state.players[id]; p.score = 0; p.played = 0; p.djTurns = 0; });
       state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
+      state._djIdx = -1; state.djCount = 0; state.dj = null;
       dzPause(); roundTrack = null;
       resetRound(); state.history = [];
       publish();
@@ -1164,7 +1179,10 @@
       var s = state;
       var origin = location.origin + location.pathname;
       var joinUrl = origin + '#join=' + s.code;
-      var lb = leaderboardArr(s.players);
+      var fair = fairInfo(s.players);
+      // En fin de partie, on classe à l'équitable (chacun ramené au même nombre d'occasions).
+      var lb = (s.phase === 'ended' && !fair.balanced) ? leaderboardFair(s.players, fair) : leaderboardArr(s.players);
+      var fairArg = (s.phase === 'ended' && !fair.balanced) ? fair : null;
       var present = s._present || {};
 
       var THEME_PRESETS = ['Années 80', 'Années 90', 'Années 2000', 'Disney', 'Rap FR', 'Variété FR', 'Rock', 'Films', 'Séries TV', 'Dessins animés', 'Été', 'Karaoké'];
@@ -1422,6 +1440,9 @@
         '    </div>',
         '  </div>',
         (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
+        (s.djRotate && s.phase !== 'lobby' && s.phase !== 'ended'
+          ? '  <div class="text-center -mt-2 mb-3 text-xs ' + (fair.balanced ? 'text-neon-lime' : 'text-neon-gold') + '">' + (fair.balanced ? '⚖️ Équitable : chacun a eu le même nombre de titres jouables' : '⚖️ Cycle en cours — termine le tour de DJ pour un classement non ajusté') + '</div>'
+          : ''),
         (showTheme ? modeBar : ''),
         (showTheme ? themeBar : ''),
         dzBar,
@@ -1430,7 +1451,8 @@
         '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
         '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/40">' + esc(s.partyName) + '</span></div>',
              (s.teams ? renderTeams(s) : ''),
-             renderLeaderboard(lb, present),
+             renderLeaderboard(lb, present, null, fairArg),
+             (fairArg ? '<p class="text-white/45 text-xs mt-3 text-center">⚖️ Classement <b>équitable</b> : les scores sont ramenés au même nombre de titres jouables (chacun n\'a pas été DJ le même nombre de fois).</p>' : ''),
         '  </div>',
         '  <button id="quit" class="mt-4 text-white/40 text-sm">Quitter la partie</button>',
         '</div>'
@@ -1455,7 +1477,18 @@
       });
       bind('#skipWait', function () { s.voteAt = Date.now() - ((s.config && s.config.voteSecs || 10) * 1000); renderHost(); });
       bind('#next', launchRound);
-      bind('#end', endGame);
+      bind('#end', function () {
+        // Équité : on prévient si tout le monde n'a pas eu le même nombre d'occasions.
+        var fi = fairInfo(s.players);
+        if (!fi.balanced && fi.any) {
+          var short = rotationArr().filter(function (p) { return (p.played || 0) < fi.maxPlayed; })
+            .map(function (p) { return p.name + ' (' + (p.played || 0) + '/' + fi.maxPlayed + ')'; }).join(', ');
+          if (!confirm('⚠️ Cycle DJ incomplet — ' + short + ' ont eu moins de titres jouables.\n\n'
+            + 'Le classement final sera AJUSTÉ pour rester équitable.\n\n'
+            + 'OK = terminer maintenant · Annuler = continuer à jouer pour équilibrer')) return;
+        }
+        endGame();
+      });
       bind('#replay', replay);
       bind('#export', function () { exportLeaderboard(s); });
       bind('#gear', openSettings);
@@ -1570,7 +1603,9 @@
       }
       var mine = me();
       var myScore = mine ? mine.score : 0;
-      var lb = leaderboardArr(s.players);
+      var fairP = fairInfo(s.players);
+      var fairArgP = (s.phase === 'ended' && !fairP.balanced) ? fairP : null;
+      var lb = fairArgP ? leaderboardFair(s.players, fairP) : leaderboardArr(s.players);
       var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
       var isBuzzer = s.buzzer && s.buzzer.id === ME;
       var am = s.answerMode || 'both'; // both | title | artist
@@ -1747,7 +1782,7 @@
           + (s.theme ? '<span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span>' : '')
           + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
-        '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME) + '</div>',
+        '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME, fairArgP) + (fairArgP ? '<p class="text-white/45 text-xs mt-2 text-center">⚖️ Scores ajustés : chacun n\'a pas été DJ le même nombre de fois</p>' : '') + '</div>',
         '  <button id="leave" class="mt-3 text-white/40 text-sm">Quitter</button>',
         '</div>'
       ].join('');
@@ -1860,6 +1895,31 @@
      -------------------------------------------------------------------------- */
   var TEAM_COLORS = ['#ff4d6d', '#3aa0ff', '#a3e635', '#fbbf24'];
   var TEAM_NAMES = ['Rouge', 'Bleu', 'Vert', 'Jaune'];
+  /* ------------------------------------------------------------------
+     ÉQUITÉ DU CLASSEMENT
+     Un joueur qui a été DJ plus souvent qu'un autre a eu MOINS d'occasions
+     de marquer. On ramène donc tout le monde au même nombre d'occasions :
+        score équitable = score × (occasions max) / (ses occasions)
+     Si tout le monde a joué le même nombre de titres, rien ne change.
+     ------------------------------------------------------------------ */
+  function fairInfo(players) {
+    var arr = Object.keys(players || {}).map(function (k) { return players[k]; });
+    var maxPlayed = 0, balanced = true, firstPlayed = null;
+    arr.forEach(function (p) {
+      var pl = p.played || 0;
+      if (pl > maxPlayed) maxPlayed = pl;
+      if (firstPlayed === null) firstPlayed = pl; else if (pl !== firstPlayed) balanced = false;
+    });
+    return { maxPlayed: maxPlayed, balanced: balanced, any: arr.some(function (p) { return (p.djTurns || 0) > 0; }) };
+  }
+  function fairScore(p, info) {
+    if (!info || info.balanced || !p.played) return p.score;
+    return Math.round(p.score * (info.maxPlayed / p.played));
+  }
+  function leaderboardFair(players, info) {
+    return Object.keys(players || {}).map(function (k) { return players[k]; })
+      .sort(function (a, b) { return fairScore(b, info) - fairScore(a, info) || a.name.localeCompare(b.name); });
+  }
   function leaderboardArr(players) {
     return Object.keys(players || {}).map(function (k) { return players[k]; })
       .sort(function (a, b) { return b.score - a.score || a.name.localeCompare(b.name); });
@@ -1894,24 +1954,26 @@
     var a = h % 360, b = (a + 55) % 360;
     return 'linear-gradient(135deg,hsl(' + a + ',85%,60%),hsl(' + b + ',85%,48%))';
   }
-  function renderLeaderboard(lb, present, highlightId) {
+  function renderLeaderboard(lb, present, highlightId, fair) {
     if (!lb.length) return '<p class="text-white/40 text-center py-3">Aucun joueur pour l\'instant…</p>';
     var medals = ['🥇', '🥈', '🥉'];
-    var max = Math.max(1, lb[0] ? lb[0].score : 1);
+    var val = function (p) { return fair ? fairScore(p, fair) : p.score; };
+    var max = Math.max(1, lb[0] ? val(lb[0]) : 1);
     return '<div class="space-y-2">' + lb.map(function (p, i) {
       var on = present && present[p.id];
       var hi = highlightId && p.id === highlightId;
-      var pct = p.score > 0 ? Math.max(8, Math.round((p.score / max) * 100)) : 0;
+      var sc = val(p);
+      var pct = sc > 0 ? Math.max(8, Math.round((sc / max) * 100)) : 0;
       return [
         '<div class="flex items-center gap-3 rounded-xl px-3 py-2 ' + (hi ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/25') + '">',
         '  <div class="w-6 text-center text-lg font-extrabold ' + (i < 3 ? '' : 'text-white/40') + '">' + (medals[i] || (i + 1)) + '</div>',
         '  <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ' + (on ? '' : 'opacity-40') + '" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</div>',
         (typeof p.team === 'number' ? '  <span class="w-2.5 h-2.5 rounded-full shrink-0 -ml-1.5" title="Équipe ' + (TEAM_NAMES[p.team] || '') + '" style="background:' + (TEAM_COLORS[p.team] || '#888') + '"></span>' : ''),
         '  <div class="flex-1 min-w-0">',
-        '    <div class="font-bold truncate text-sm ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + '</div>',
+        '    <div class="font-bold truncate text-sm ' + (on ? '' : 'text-white/40') + '">' + esc(p.name) + (on ? '' : ' <span class="text-xs">·zzz</span>') + (fair && sc !== p.score ? ' <span class="text-xs text-neon-cyan" title="ajusté : ' + (p.djTurns || 0) + ' titre(s) en tant que DJ">⚖️</span>' : '') + '</div>',
         '    <div class="h-1.5 mt-1 rounded-full bg-white/10 overflow-hidden"><div class="h-full rounded-full transition-all duration-700" style="width:' + pct + '%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>',
         '  </div>',
-        '  <div class="font-extrabold text-neon-gold tabular-nums text-lg">' + p.score + '</div>',
+        '  <div class="text-right"><div class="font-extrabold text-neon-gold tabular-nums text-lg">' + sc + '</div>' + (fair && sc !== p.score ? '<div class="text-white/35 text-[10px] leading-none">brut ' + p.score + '</div>' : '') + '</div>',
         '</div>'
       ].join('');
     }).join('') + '</div>';

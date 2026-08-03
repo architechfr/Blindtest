@@ -754,12 +754,26 @@
       '  </div>',
       '  <p class="text-white/40 text-xs mb-5"><b>Titre + Artiste</b> : les deux sont demandés (2 cases, moitié des points si une seule bonne). <b>Titre OU Artiste</b> : l\'un des deux suffit pour marquer.</p>',
 
-      '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>⏱️ Temps de vote des autres joueurs :</span><input id="voteSecs" type="number" min="0" max="60" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
+      '  <div id="voteSecsBox" class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>⏱️ Temps de vote des autres joueurs :</span><input id="voteSecs" type="number" min="0" max="60" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Équipes</p>',
       '  <div class="grid grid-cols-4 gap-2 mb-6">' + [0, 2, 3, 4].map(function (n) { return '<button type="button" class="suTeam py-3 rounded-xl text-sm font-bold ' + (n === 0 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
 
-      '  <div class="glass rounded-2xl p-4 mb-8">',
+      // Barème du mode Turbo : rien à régler, le calcul est automatique.
+      '  <div id="turboBox" class="glass rounded-2xl p-4 mb-8" style="display:none">',
+      '    <p class="text-sm font-bold uppercase text-neon-lime mb-2">⚡ Points du mode Turbo</p>',
+      '    <p class="text-white/70 text-sm leading-relaxed">Ici le barème classique ne s\'applique pas : <b>tout le monde répond</b>, donc pas de buzz ni de vote. Les points dépendent de la <b>rapidité</b> :</p>',
+      '    <div class="mt-3 space-y-1.5 text-sm">',
+      '      <div class="flex justify-between"><span class="text-white/70">✓ Bonne réponse</span><span class="font-extrabold text-neon-lime">60 pts garantis</span></div>',
+      '      <div class="flex justify-between"><span class="text-white/70">⚡ Bonus rapidité</span><span class="font-extrabold text-neon-cyan">+ 0 à 40 pts</span></div>',
+      '      <div class="flex justify-between"><span class="text-white/70">🥇 Le plus rapide</span><span class="font-extrabold text-neon-gold">+ 10 pts</span></div>',
+      '      <div class="flex justify-between"><span class="text-white/70">≈ À moitié (titre ou artiste)</span><span class="font-extrabold text-neon-gold">la moitié</span></div>',
+      '      <div class="flex justify-between"><span class="text-white/70">✗ Mauvaise réponse / passe</span><span class="font-extrabold text-white/50">0 pt (aucun malus)</span></div>',
+      '    </div>',
+      '    <p class="text-white/45 text-xs mt-3">Soit <b>60 à 100 points</b> par bonne réponse. Répondre en 2 s ≈ 100 pts, en 25 s ≈ 67 pts. Aucun malus : personne ne décroche.</p>',
+      '  </div>',
+
+      '  <div id="pointsBox" class="glass rounded-2xl p-4 mb-8">',
       '    <p class="text-sm font-bold uppercase text-white/60 mb-3">Points</p>',
       '    <div class="grid grid-cols-2 gap-3 text-center">',
       '      <div><div class="text-xs text-neon-lime mb-1">✓ Bonne réponse</div><input id="pBuzz" type="number" value="5" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
@@ -791,13 +805,23 @@
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
       };
     });
+    // Le mode Turbo a son propre barème (vitesse) : on montre le bon bloc de points.
+    function syncPointsUI() {
+      var turbo = setupMode === 'turbo';
+      var pb = document.getElementById('pointsBox'), tb = document.getElementById('turboBox'), vb = document.getElementById('voteSecsBox');
+      if (pb) pb.style.display = turbo ? 'none' : '';
+      if (tb) tb.style.display = turbo ? '' : 'none';
+      if (vb) vb.style.display = turbo ? 'none' : '';   // pas de vote en Turbo
+    }
     Array.prototype.forEach.call(document.querySelectorAll('.suMode'), function (b) {
       b.onclick = function () {
         setupMode = b.getAttribute('data-mode');
         Array.prototype.forEach.call(document.querySelectorAll('.suMode'), function (x) { x.className = x.className.replace('bg-neon-violet text-white', 'bg-black/30 text-white/70'); });
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
+        syncPointsUI();
       };
     });
+    syncPointsUI();
     Array.prototype.forEach.call(document.querySelectorAll('.suTeam'), function (b) {
       b.onclick = function () {
         setupTeams = parseInt(b.getAttribute('data-teams'), 10) || 0;
@@ -1382,7 +1406,11 @@
       var modeBar = [
         '<div class="glass rounded-2xl p-3 mb-4">',
         '  <div class="text-xs font-bold uppercase text-white/50 mb-2">🎮 Mode de jeu</div>',
-        '  <div class="grid grid-cols-3 gap-2">' + MODES.map(function (m) { return '<button class="modeChip py-2 rounded-xl text-sm font-bold ' + (s.mode === m.id ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '" data-mode="' + m.id + '">' + m.name + '</button>'; }).join('') + '</div>',
+        '  <div class="grid grid-cols-2 gap-2">' + MODES.map(function (m) { return '<button class="modeChip py-2 rounded-xl text-sm font-bold ' + (s.mode === m.id ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '" data-mode="' + m.id + '">' + m.name + '</button>'; }).join('') + '</div>',
+        // Rappel du barème réellement appliqué dans le mode en cours.
+        '  <div class="text-xs mt-2 ' + (isTurbo ? 'text-neon-lime' : 'text-white/45') + '">' + (isTurbo
+             ? '⚡ Points à la vitesse : 60 garantis + jusqu\'à 40 de rapidité (+10 au plus rapide) · pas de malus, pas de vote'
+             : '🏆 ' + (s.config.pointsBuzz >= 0 ? '+' : '') + s.config.pointsBuzz + ' bonne · ' + s.config.pointsWrong + ' mauvaise · +' + s.config.pointsVote + ' bon vote · ' + (s.config.pointsVoteWrong || 0) + ' mauvais vote') + '</div>',
         '  <div class="text-xs font-bold uppercase text-white/50 mt-3 mb-2">👥 Équipes</div>',
         '  <div class="grid grid-cols-4 gap-2">' + [0, 2, 3, 4].map(function (n) { return '<button class="teamChip py-2 rounded-xl text-sm font-bold ' + (s.teams === n ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
         '</div>'
@@ -2430,10 +2458,16 @@
         + '<b>⚡ Turbo</b> — tout le monde répond en même temps, jusqu\'à 100 pts selon la rapidité.<br>'
         + '<b>🎶 Fredonne</b> — pas de musique : un joueur fredonne, les autres buzzent.<br>'
         + '<b>📅 Année</b> — devine l\'année de sortie, le plus proche gagne.'),
-      sec('🏆 Les points',
+      sec('🏆 Les points (Classique / Fredonne / Année)',
         'Bonne réponse <b class="text-neon-lime">+5</b> · Mauvaise <b class="text-rose-400">−2</b><br>'
         + 'Bon vote <b class="text-neon-lime">+2</b> · Mauvais vote <b class="text-rose-400">−1</b><br>'
         + '<span class="text-white/50 text-xs">Voter est un pari : écoute bien même quand ce n\'est pas ton tour !</span>'),
+      sec('⚡ Les points en mode Turbo',
+        'Barème <b>différent</b> : pas de buzz, pas de vote, tout se joue à la vitesse.<br>'
+        + '<b class="text-neon-lime">60 pts garantis</b> pour une bonne réponse<br>'
+        + '<b class="text-neon-cyan">+ 0 à 40 pts</b> selon ta rapidité · <b class="text-neon-gold">+10</b> au plus rapide<br>'
+        + '≈ à moitié = la moitié · faux ou passe = <b>0</b>, aucun malus<br>'
+        + '<span class="text-white/50 text-xs">Soit 60 à 100 points par bonne réponse — tout le monde marque, l\'écart se fait au chrono.</span>'),
       sec('🤷 Je ne sais pas',
         'En mode Turbo, un bouton <b>« Je passe »</b> permet de ne pas bloquer la manche.<br>'
         + 'En Classique, il suffit de <b>ne pas buzzer</b>.'),

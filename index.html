@@ -371,6 +371,39 @@
   }
   function deezerTrack(id, cb) { jsonp('https://api.deezer.com/track/' + id, function (d) { cb(d || null); }); }
 
+  /* ---------------------------------------------------------------
+     PLAYLISTS AUTOMATIQUES
+     Un seul téléphone branché sur l'enceinte : l'app choisit elle-même
+     le morceau suivant. Chaque playlist est une liste d'artistes ;
+     on en tire un au hasard puis un de ses titres (extrait Deezer).
+     --------------------------------------------------------------- */
+  var PLAYLISTS = [
+    { id: 'p80', icon: '🕺', name: 'Années 80', artists: ['Michael Jackson', 'Madonna', 'Queen', 'Prince', 'Depeche Mode', 'a-ha', 'Cyndi Lauper', 'The Police', 'Bon Jovi', 'Tina Turner', 'Indochine', 'Jean-Jacques Goldman', 'Téléphone', 'France Gall', 'Daniel Balavoine', 'Eurythmics', 'Duran Duran', 'Whitney Houston'] },
+    { id: 'p90', icon: '💿', name: 'Années 90', artists: ['Nirvana', 'Oasis', 'Spice Girls', 'Backstreet Boys', 'Mariah Carey', 'Red Hot Chili Peppers', 'Blur', 'Daft Punk', 'No Doubt', 'MC Solaar', 'IAM', 'Alliage', 'Worlds Apart', 'Ace of Base', 'Snap!', '2 Unlimited', 'Céline Dion', 'Britney Spears'] },
+    { id: 'p00', icon: '📱', name: 'Années 2000', artists: ['Coldplay', 'Eminem', 'Rihanna', 'Beyoncé', 'Linkin Park', 'The Killers', 'Amy Winehouse', 'Kylie Minogue', 'Black Eyed Peas', 'Diam\'s', 'Kyo', 'Superbus', 'Corneille', 'Justin Timberlake', 'Shakira', 'Green Day', 'Outkast', 'Gorillaz'] },
+    { id: 'pfr', icon: '🇫🇷', name: 'Variété FR', artists: ['Johnny Hallyday', 'Michel Sardou', 'Céline Dion', 'Francis Cabrel', 'Patrick Bruel', 'Michel Berger', 'Véronique Sanson', 'Alain Souchon', 'Renaud', 'Jean-Jacques Goldman', 'Julien Clerc', 'Zaz', 'Louane', 'Vianney', 'Christophe Maé', 'Calogero', 'Florent Pagny', 'Serge Gainsbourg'] },
+    { id: 'prap', icon: '🎤', name: 'Rap FR', artists: ['IAM', 'NTM', 'MC Solaar', 'Booba', 'Orelsan', 'Nekfeu', 'PNL', 'Damso', 'Bigflo & Oli', 'Soprano', 'Sexion d\'Assaut', 'Sniper', 'Rohff', 'Lomepal', 'Jul', 'Ninho', 'Gims', 'Dadju'] },
+    { id: 'pdis', icon: '🏰', name: 'Disney', artists: ['Le Roi Lion', 'La Reine des Neiges', 'Aladdin', 'La Belle et la Bête', 'Pocahontas', 'Mulan', 'Le Livre de la Jungle', 'La Petite Sirène', 'Toy Story', 'Vaiana', 'Raiponce', 'Coco', 'Hercule', 'Tarzan'] },
+    { id: 'prock', icon: '🎸', name: 'Rock', artists: ['AC/DC', 'Queen', 'Led Zeppelin', 'The Rolling Stones', 'Nirvana', 'Metallica', 'Guns N\' Roses', 'The Beatles', 'Pink Floyd', 'Muse', 'Foo Fighters', 'Arctic Monkeys', 'The White Stripes', 'Noir Désir', 'Téléphone'] },
+    { id: 'pete', icon: '☀️', name: 'Tubes de l\'été', artists: ['Shakira', 'Luis Fonsi', 'Ricky Martin', 'Gipsy Kings', 'Manu Chao', 'Magic System', 'Kaoma', 'Lou Bega', 'Las Ketchup', 'Daddy Yankee', 'Bob Sinclar', 'Stromae', 'Dua Lipa', 'Ed Sheeran'] },
+    { id: 'pfilm', icon: '🎬', name: 'Musiques de films', artists: ['Hans Zimmer', 'John Williams', 'Ennio Morricone', 'Titanic soundtrack', 'Dirty Dancing', 'Grease', 'Pulp Fiction soundtrack', 'James Bond theme', 'Rocky soundtrack', 'Ghostbusters', 'Flashdance', 'Footloose'] },
+    { id: 'pdance', icon: '🎉', name: 'Dancefloor', artists: ['David Guetta', 'Daft Punk', 'Calvin Harris', 'Avicii', 'Martin Solveig', 'Bob Sinclar', 'Justice', 'The Weeknd', 'Dua Lipa', 'Bruno Mars', 'Lady Gaga', 'Robin Schulz', 'Kungs', 'Ofenbach'] }
+  ];
+  function playlistById(id) { for (var i = 0; i < PLAYLISTS.length; i++) if (PLAYLISTS[i].id === id) return PLAYLISTS[i]; return null; }
+
+  /* Tire un morceau de la playlist, en évitant ceux déjà joués. cb(track|null) */
+  function autoPick(pl, usedIds, cb, tries) {
+    tries = tries || 0;
+    if (!pl || tries >= 4) { cb(null); return; }
+    var artist = pl.artists[(Math.random() * pl.artists.length) | 0];
+    deezerSearch(artist, function (res) {
+      if (!res || !res.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
+      var pool = res.filter(function (t) { return t.preview && usedIds.indexOf(t.id) < 0; });
+      if (!pool.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
+      cb(pool[(Math.random() * pool.length) | 0]);
+    });
+  }
+
   var dzAudio = document.getElementById('dzaudio');
   function dzPlay(url) {
     // Si le DJ joue depuis Spotify/YT Music/etc., on ne lance surtout pas l'extrait
@@ -928,6 +961,29 @@
     store.set('hostGame', state);
     keepAwake();
     var roundTrack = null; // morceau Deezer choisi pour la manche (local hôte, jamais diffusé)
+    var autoPl = store.get('autoPlaylist', null); // playlist automatique active (id) ou null
+    var playedIds = [];                            // morceaux déjà passés, pour ne pas les répéter
+    var autoLoading = false;
+
+    /* Précharge le morceau suivant de la playlist pour qu'il soit prêt
+       dès que l'hôte lance la manche (la recherche Deezer est asynchrone). */
+    function prefetchAuto() {
+      if (!autoPl || roundTrack || autoLoading) return;
+      var pl = playlistById(autoPl); if (!pl) return;
+      autoLoading = true;
+      autoPick(pl, playedIds, function (t) {
+        autoLoading = false;
+        if (!t) { toast('Playlist : aucun morceau trouvé, réessaie', 'err'); return; }
+        playedIds.push(t.id);
+        if (playedIds.length > 200) playedIds.shift();
+        roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, auto: true };
+        deezerTrack(t.id, function (full) {
+          if (full && full.release_date) roundTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
+          renderHost();
+        });
+        renderHost();
+      });
+    }
 
     function persist() { store.set('hostGame', state); }
     function publish() { persist(); if (chan) chan.sendState(state); renderHost(); }
@@ -1565,8 +1621,22 @@
       var dzBar = '';
       if (deezerOn && prepPhase) {
         var plays = platform().plays;
-        dzBar = '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
-          ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">🔒 Réponse enregistrée (cachée)</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
+        var curPl = autoPl ? playlistById(autoPl) : null;
+        // Playlist automatique : l'app enchaîne les morceaux toute seule.
+        dzBar = '<div class="glass rounded-2xl p-3 mb-3">'
+          + '<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">📻 Playlist auto</span>'
+          + (curPl ? '<button id="plOff" class="text-xs text-white/40 underline">désactiver</button>' : '') + '</div>'
+          + (curPl
+              ? '<div class="flex items-center gap-2"><span class="px-3 py-1.5 rounded-full bg-neon-violet text-white text-sm font-bold">' + curPl.icon + ' ' + esc(curPl.name) + '</span>'
+                + '<span class="text-white/40 text-xs flex-1">' + playedIds.length + ' morceau(x) joué(s)</span>'
+                + '<button id="plSkip" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
+              : '<div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
+                  return '<button class="plChip shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
+                }).join('') + '</div>')
+          + (curPl ? '<p class="text-white/40 text-xs mt-2">L\'app choisit le morceau suivant automatiquement — tu n\'as plus qu\'à lancer.</p>' : '')
+          + '</div>';
+        dzBar += '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
+          ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">' + (roundTrack.auto ? '📻 Choisi automatiquement (caché)' : '🔒 Réponse enregistrée (cachée)') + '</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
           : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 ' + (plays ? 'Choisir un morceau (Deezer)' : 'Enregistrer la réponse du titre') + '</button>'
             + (plays ? '' : '<p class="text-white/40 text-xs mt-2 text-center">Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.</p>')) + '</div>';
       }
@@ -1881,6 +1951,18 @@
       bind('#hostOral', function () { hostAnswer(''); });
       bind('#yrReveal', function () { var e = $('#yrTarget'); revealYear(e ? e.value : ''); });
       bind('#dzopen', openMusicPicker);
+      // Playlists automatiques
+      Array.prototype.forEach.call(document.querySelectorAll('.plChip'), function (b) {
+        b.onclick = function () {
+          autoPl = b.getAttribute('data-pl'); store.set('autoPlaylist', autoPl);
+          roundTrack = null; prefetchAuto(); renderHost();
+          toast('Playlist activée 📻', 'ok');
+        };
+      });
+      bind('#plOff', function () { autoPl = null; store.del('autoPlaylist'); renderHost(); });
+      bind('#plSkip', function () { roundTrack = null; prefetchAuto(); renderHost(); });
+      // Prépare le morceau suivant dès qu'on est en attente de lancement
+      if (autoPl && !roundTrack && prepPhase) prefetchAuto();
       bind('#dzToggle', function () { if (dzAudio && dzAudio.paused) dzResume(); else dzPause(); });
       bind('#dzReplay', function () { if (roundTrack) dzPlay(roundTrack.preview); });
       var dv = $('#dzvol'); if (dv) dv.oninput = function () { if (dzAudio) dzAudio.volume = parseFloat(dv.value); };

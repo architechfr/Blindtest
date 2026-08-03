@@ -372,7 +372,8 @@
     var mt = match(title), ma = match(artist);
     if (mode === 'title') return mt ? 'ok' : 'ko';
     if (mode === 'artist') return ma ? 'ok' : 'ko';
-    return (mt && ma) ? 'ok' : ((mt || ma) ? 'half' : 'ko'); // both : les deux attendus
+    if (mode === 'either') return (mt || ma) ? 'ok' : 'ko';       // l'un des deux suffit
+    return (mt && ma) ? 'ok' : ((mt || ma) ? 'half' : 'ko');      // both : les deux attendus
   }
 
   /* --------------------------------------------------------------------------
@@ -639,12 +640,13 @@
       '  <p class="text-white/40 text-xs mb-5">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).</p>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Que doit-on trouver ?</p>',
-      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-ans="both">🎵 Titre + Artiste</button>',
+      '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="either">🎲 Titre OU Artiste</button>',
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="title">💿 Titre seul</button>',
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="artist">🎤 Artiste seul</button>',
       '  </div>',
-      '  <p class="text-white/40 text-xs mb-5">« Titre + Artiste » demande les deux réponses (2 cases) au joueur qui a buzzé.</p>',
+      '  <p class="text-white/40 text-xs mb-5"><b>Titre + Artiste</b> : les deux sont demandés (2 cases, moitié des points si une seule bonne). <b>Titre OU Artiste</b> : l\'un des deux suffit pour marquer.</p>',
 
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>⏱️ Temps de vote des autres joueurs :</span><input id="voteSecs" type="number" min="0" max="60" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
 
@@ -1661,11 +1663,11 @@
           : [
             '<div class="w-full animate-slidein text-center">',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">⚡ VITE !</p>',
-            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'artist' ? 'L\'artiste' : 'Le titre') + ' — jusqu\'à 100 pts</p>',
+            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'either' ? 'Titre OU artiste' : am === 'artist' ? 'L\'artiste' : 'Le titre') + ' — jusqu\'à 100 pts</p>',
             (am === 'both'
               ? '  <input id="raceTitle" maxlength="80" placeholder="💿 Titre…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
                 + '<input id="raceArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-3" />'
-              : '  <input id="raceOne" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />'),
+              : '  <input id="raceOne" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : am === 'either' ? '🎲 Titre ou artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />'),
             '  <button id="raceSend" class="btn-glow w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Envoyer ⚡</button>',
             '  <button id="racePass" class="mt-3 w-full py-3 rounded-xl glass font-bold text-sm">🤷 Je ne sais pas — je passe</button>',
             '</div>'
@@ -1700,11 +1702,11 @@
           center = [
             '<div class="w-full animate-slidein text-center">',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
-            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'artist' ? 'Nomme l\'artiste' : 'Donne le titre') + '</p>',
+            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'either' ? 'Titre OU artiste (au choix)' : am === 'artist' ? 'Nomme l\'artiste' : 'Donne le titre') + '</p>',
             (am === 'both'
               ? '  <input id="ansTitle" maxlength="80" placeholder="💿 Titre…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
                 + '<input id="ansArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-4" />'
-              : '  <input id="ans" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />'),
+              : '  <input id="ans" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : am === 'either' ? '🎲 Titre ou artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />'),
             '  <button id="send" class="w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider ma réponse</button>',
             '  <button id="oral" class="mt-3 text-white/40 text-sm">Je réponds à l\'oral</button>',
             '</div>'
@@ -1780,7 +1782,7 @@
         (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
         (s.phase !== 'ended' && s.mode !== 'year' ? '  <div class="text-center mt-1 flex flex-wrap justify-center gap-2">'
           + (s.theme ? '<span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span>' : '')
-          + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
+          + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'either' ? '🎲 Titre OU Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
         '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME, fairArgP) + (fairArgP ? '<p class="text-white/45 text-xs mt-2 text-center">⚖️ Scores ajustés : chacun n\'a pas été DJ le même nombre de fois</p>' : '') + '</div>',
         '  <button id="leave" class="mt-3 text-white/40 text-sm">Quitter</button>',

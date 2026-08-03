@@ -737,6 +737,15 @@
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🏁 Fin de partie</p>',
+      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '    <button type="button" class="suGoal py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-goal="none">Libre</button>',
+      '    <button type="button" class="suGoal py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-goal="score">1<sup>er</sup> à X pts</button>',
+      '    <button type="button" class="suGoal py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-goal="rounds">X manches</button>',
+      '  </div>',
+      '  <div id="goalBox" class="flex items-center gap-2 mb-5 text-sm text-white/60" style="display:none"><span id="goalLbl">Objectif :</span><input id="goalVal" type="number" min="1" max="999" value="50" class="w-20 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
+      '  <p id="goalHint" class="text-white/40 text-xs mb-5">Partie <b>libre</b> : tu décides quand terminer (bouton « Terminer »).</p>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
       '  <div class="grid grid-cols-3 gap-2 mb-2">',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-dj="0">Off (moi seul)</button>',
@@ -771,6 +780,7 @@
       '      <div class="flex justify-between"><span class="text-white/70">✗ Mauvaise réponse / passe</span><span class="font-extrabold text-white/50">0 pt (aucun malus)</span></div>',
       '    </div>',
       '    <p class="text-white/45 text-xs mt-3">Soit <b>60 à 100 points</b> par bonne réponse. Répondre en 2 s ≈ 100 pts, en 25 s ≈ 67 pts. Aucun malus : personne ne décroche.</p>',
+      '    <div class="flex items-center gap-2 mt-3 text-sm text-white/60 border-t border-white/10 pt-3"><span>⏱️ Temps pour répondre :</span><input id="turboSecs" type="number" min="10" max="120" value="30" class="w-16 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
       '  </div>',
 
       '  <div id="pointsBox" class="glass rounded-2xl p-4 mb-8">',
@@ -790,7 +800,20 @@
 
     $('#back').onclick = function () { location.hash = ''; };
 
-    var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0;
+    var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none';
+    Array.prototype.forEach.call(document.querySelectorAll('.suGoal'), function (b) {
+      b.onclick = function () {
+        setupGoal = b.getAttribute('data-goal');
+        Array.prototype.forEach.call(document.querySelectorAll('.suGoal'), function (x) { x.className = x.className.replace('bg-neon-cyan text-black', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-cyan text-black');
+        var box = document.getElementById('goalBox'), lbl = document.getElementById('goalLbl'),
+            val = document.getElementById('goalVal'), hint = document.getElementById('goalHint');
+        if (box) box.style.display = setupGoal === 'none' ? 'none' : '';
+        if (setupGoal === 'score') { if (lbl) lbl.textContent = 'Points à atteindre :'; if (val) val.value = 50; if (hint) hint.innerHTML = 'La partie s\'arrête dès qu\'un joueur atteint le score (le cycle DJ en cours est terminé pour rester équitable).'; }
+        else if (setupGoal === 'rounds') { if (lbl) lbl.textContent = 'Nombre de manches :'; if (val) val.value = 20; if (hint) hint.innerHTML = 'La partie s\'arrête après le nombre de manches choisi.'; }
+        else if (hint) hint.innerHTML = 'Partie <b>libre</b> : tu décides quand terminer (bouton « Terminer »).';
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll('.suDj'), function (b) {
       b.onclick = function () {
         setupDj = parseInt(b.getAttribute('data-dj'), 10) || 0;
@@ -846,6 +869,9 @@
       var st = initialState(genCode(), hostName, partyName, cfg);
       st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
       st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
+      st.turboSecs = Math.min(120, Math.max(10, parseInt(($('#turboSecs') || {}).value, 10) || 30));
+      st.goal = setupGoal;
+      st.goalVal = Math.max(1, parseInt(($('#goalVal') || {}).value, 10) || (setupGoal === 'score' ? 50 : 20));
       st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
       store.set('hostGame', st);
       location.hash = 'host';
@@ -862,6 +888,7 @@
       buzzOpenAt: 0, buzzMs: null, voteAt: 0, tried: [],
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
+      goal: 'none', goalVal: 0,
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -1318,13 +1345,22 @@
     // Décompte du vote : on met à jour UNIQUEMENT le chiffre affiché.
     // (Reconstruire tout l'écran chaque seconde était inutilement coûteux.)
     var voteTick = setInterval(function () {
-      if (state.phase !== 'voting' || document.hidden) return;
-      var el = document.getElementById('voteLeft');
-      if (!el) return;
-      var secs = (state.config && state.config.voteSecs) || 10;
-      var left = state.voteAt ? Math.max(0, Math.ceil((state.voteAt + secs * 1000 - Date.now()) / 1000)) : 0;
-      if (el.textContent !== String(left)) el.textContent = left;
-      if (left === 0) renderHost(); // fin du décompte : on débloque les boutons
+      if (document.hidden) return;
+      if (state.phase === 'voting') {
+        var el = document.getElementById('voteLeft');
+        if (!el) return;
+        var secs = (state.config && state.config.voteSecs) || 10;
+        var left = state.voteAt ? Math.max(0, Math.ceil((state.voteAt + secs * 1000 - Date.now()) / 1000)) : 0;
+        if (el.textContent !== String(left)) el.textContent = left;
+        if (left === 0) renderHost(); // fin du décompte : on débloque les boutons
+      } else if (state.phase === 'racing' && state.buzzOpenAt) {
+        // Turbo : la fenêtre de réponse est celle qui sert au calcul des points.
+        var T = (state.turboSecs || 30) * 1000;
+        var rl = Math.max(0, Math.ceil((state.buzzOpenAt + T - Date.now()) / 1000));
+        var rel = document.getElementById('raceLeft');
+        if (rel && rel.textContent !== String(rl)) rel.textContent = rl;
+        if (rl === 0) closeRacing(); // temps écoulé → on passe à la correction
+      }
     }, 1000);
 
     /* Gestion d'un joueur : corriger son score, le renommer, l'exclure.
@@ -1518,7 +1554,10 @@
           '  <div class="text-5xl mb-2 animate-pulse">⚡</div>',
           '  <p class="text-2xl font-extrabold text-neon-lime">TOUT LE MONDE RÉPOND !</p>',
           '  <p class="text-white/50 mb-3">Plus c\'est rapide, plus ça rapporte (jusqu\'à 100 pts)</p>',
-          '  <div class="text-3xl font-extrabold text-neon-cyan">' + got + '/' + lb.length + '</div><p class="text-white/40 text-xs mb-4">réponses reçues</p>',
+          '  <div class="flex items-center justify-center gap-6 mb-4">',
+          '    <div><div class="text-3xl font-extrabold text-neon-cyan">' + got + '/' + lb.length + '</div><p class="text-white/40 text-xs">réponses</p></div>',
+          '    <div><div id="raceLeft" class="text-3xl font-extrabold text-neon-gold">' + Math.max(0, Math.ceil(((s.buzzOpenAt || Date.now()) + (s.turboSecs || 30) * 1000 - Date.now()) / 1000)) + '</div><p class="text-white/40 text-xs">secondes</p></div>',
+          '  </div>',
           '  <div class="flex flex-wrap justify-center gap-2 mb-4">' + lb.map(function (p) {
                 var a = (s.answers || {})[p.id];
                 return '<span class="px-2.5 py-1 rounded-full text-xs font-bold ' + (a ? 'bg-neon-lime/25 ring-1 ring-neon-lime' : 'bg-black/30 text-white/50') + '">' + esc(p.name) + (a ? ' ' + (a.ms / 1000).toFixed(1) + 's' : ' …') + '</span>';
@@ -1653,6 +1692,16 @@
         '    </div>',
         '  </div>',
         (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
+        (function () {
+          var g = goalReached(s);
+          if (!g || s.phase === 'ended' || s.phase === 'lobby') {
+            // Sinon : progression discrète vers l'objectif
+            if (s.goal === 'rounds' && s.goalVal && s.phase !== 'ended' && s.phase !== 'lobby') return '  <div class="text-center mb-3 text-xs text-white/45">🏁 Manche ' + s.round + ' / ' + s.goalVal + '</div>';
+            if (s.goal === 'score' && s.goalVal && s.phase !== 'ended' && s.phase !== 'lobby') return '  <div class="text-center mb-3 text-xs text-white/45">🏁 Objectif : ' + s.goalVal + ' pts</div>';
+            return '';
+          }
+          return '  <div class="glass rounded-2xl p-3 mb-4 text-center" style="border-color:rgba(251,191,36,.6)"><div class="text-2xl">🏁</div><p class="font-extrabold text-neon-gold">Objectif atteint !</p><p class="text-white/60 text-sm">' + esc(g.label) + '</p><p class="text-white/40 text-xs mt-1">Tu peux terminer la partie (bouton « Terminer ») ou continuer.</p></div>';
+        })(),
         (s.djRotate && s.phase !== 'lobby' && s.phase !== 'ended'
           ? '  <div class="text-center -mt-2 mb-3 text-xs ' + (fair.balanced ? 'text-neon-lime' : 'text-neon-gold') + '">' + (fair.balanced ? '⚖️ Équitable : chacun a eu le même nombre de titres jouables' : '⚖️ Cycle en cours — termine le tour de DJ pour un classement non ajusté') + '</div>'
           : ''),
@@ -1803,7 +1852,20 @@
       onReady: function () { chan.sendIntent({ action: 'join', id: ME, name: name }); renderPlayer(); }
     });
 
-    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); } };
+    // Chrono Turbo côté joueur : mise à jour ciblée du chiffre (pas de re-render complet).
+    var raceTick = setInterval(function () {
+      if (document.hidden || !lastState || lastState.phase !== 'racing' || !lastState.buzzOpenAt) return;
+      var el = document.getElementById('pRaceLeft'); if (!el) return;
+      var T = (lastState.turboSecs || 30) * 1000;
+      var left = Math.max(0, Math.ceil((lastState.buzzOpenAt + T - Date.now()) / 1000));
+      if (el.textContent !== String(left)) {
+        el.textContent = left;
+        if (left <= 5) el.className = el.className.replace('text-neon-gold', 'text-rose-400');
+        if (left === 5) { beep(440, 0.08, 'sine'); vibrate(40); }
+      }
+    }, 500);
+
+    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); } };
 
     function me() { return lastState && lastState.players ? lastState.players[ME] : null; }
 
@@ -1880,6 +1942,8 @@
           ? '<div class="text-center animate-slidein"><div class="text-6xl mb-2">⚡</div><p class="text-2xl font-extrabold text-neon-lime">Envoyé en ' + (mineA.ms / 1000).toFixed(1) + 's !</p><p class="text-white/60 mt-1">« ' + esc(mineA.text || '—') + ' »</p><p class="text-white/40 text-sm mt-3">Plus tu as été rapide, plus tu marques…</p></div>'
           : [
             '<div class="w-full animate-slidein text-center">',
+            '  <div id="pRaceLeft" class="bt-title text-5xl font-extrabold text-neon-gold mb-1">' + Math.max(0, Math.ceil(((s.buzzOpenAt || Date.now()) + (s.turboSecs || 30) * 1000 - Date.now()) / 1000)) + '</div>',
+            '  <p class="text-white/40 text-xs mb-2">secondes — plus tu es rapide, plus tu marques</p>',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">⚡ VITE !</p>',
             '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'either' ? 'Titre OU artiste' : am === 'artist' ? 'L\'artiste' : 'Le titre') + ' — jusqu\'à 100 pts</p>',
             (am === 'both'
@@ -2136,6 +2200,22 @@
   function fairScore(p, info) {
     if (!info || info.balanced || !p.played) return p.score;
     return Math.round(p.score * (info.maxPlayed / p.played));
+  }
+  /* Objectif de fin de partie atteint ? On le SIGNALE sans couper brutalement :
+     l'hôte garde la main (et l'avertissement d'équité du cycle DJ s'applique). */
+  function goalReached(s) {
+    if (!s || !s.goal || s.goal === 'none' || !s.goalVal) return null;
+    if (s.goal === 'rounds') {
+      return s.round >= s.goalVal ? { label: s.goalVal + ' manches jouées', done: true } : null;
+    }
+    if (s.goal === 'score') {
+      var best = null;
+      Object.keys(s.players || {}).forEach(function (k) {
+        var p = s.players[k]; if (!best || p.score > best.score) best = p;
+      });
+      if (best && best.score >= s.goalVal) return { label: best.name + ' a atteint ' + s.goalVal + ' pts', done: true };
+    }
+    return null;
   }
   function leaderboardFair(players, info) {
     return Object.keys(players || {}).map(function (k) { return players[k]; })

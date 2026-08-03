@@ -505,6 +505,9 @@
     });
     if (handlers.onIntent) ch.on('broadcast', { event: 'intent' }, function (m) { handlers.onIntent(m.payload); });
     if (handlers.onState) ch.on('broadcast', { event: 'state' }, function (m) { handlers.onState(m.payload); });
+    // Canal léger : sert à informer le DJ de l'avancement SANS renvoyer tout l'état
+    // (un state complet reconstruit l'écran des joueurs et efface leur saisie en cours).
+    if (handlers.onProgress) ch.on('broadcast', { event: 'progress' }, function (m) { handlers.onProgress(m.payload); });
     if (handlers.onPresence) {
       ch.on('presence', { event: 'sync' }, function () { handlers.onPresence(ch.presenceState()); });
       ch.on('presence', { event: 'leave' }, function (e) { handlers.onPresence(ch.presenceState(), e); });
@@ -519,6 +522,7 @@
       raw: ch,
       sendIntent: function (payload) { ch.send({ type: 'broadcast', event: 'intent', payload: payload }); },
       sendState: function (payload) { ch.send({ type: 'broadcast', event: 'state', payload: payload }); },
+      sendProgress: function (payload) { ch.send({ type: 'broadcast', event: 'progress', payload: payload }); },
       close: function () { try { client().removeChannel(ch); } catch (e) {} }
     };
   }
@@ -809,7 +813,11 @@
           var rp = ensurePlayer(p.id, p.name);
           state.answers[p.id] = { name: rp.name, text: String(p.text || '').slice(0, 120), ms: Date.now() - (state.buzzOpenAt || Date.now()) };
           beep(660, 0.06, 'sine');
-          publish();
+          // IMPORTANT : pas de publish() ici. Renvoyer tout l'état reconstruirait l'écran
+          // des joueurs en train d'écrire et effacerait leur saisie. On met à jour l'hôte
+          // localement et on envoie juste un accusé léger (utile au DJ + à l'auteur).
+          persist(); renderHost();
+          if (chan) chan.sendProgress({ count: Object.keys(state.answers).length, total: Object.keys(state.players).length, from: p.id, ms: state.answers[p.id].ms, name: rp.name });
         }
       } else if (p.action === 'vote') {
         if (state.phase === 'voting' && state.buzzer && state.buzzer.id !== p.id) {
@@ -1506,6 +1514,7 @@
     var view = { phase: 'connecting' };
     var lastState = null;
     var voted = false, guessed = false, answered = false, lastPhase = null;
+    var raceMine = null, raceCount = 0, raceTotal = 0; // suivi local du mode Turbo
     keepAwake();
 
     var chan = openChannel(code, { id: ME, name: name, role: 'player' }, {
@@ -1516,6 +1525,7 @@
         if (st.phase === 'voting' && lastPhase !== 'voting') voted = false;
         if (st.phase === 'year_guess' && lastPhase !== 'year_guess') guessed = false;
         if (st.phase === 'buzzing' && lastPhase !== 'buzzing') answered = false;
+        if (st.phase === 'racing' && lastPhase !== 'racing') { raceMine = null; raceCount = 0; }
         if (st.phase === 'reveal' && st.result && st.result.correct && lastPhase !== 'reveal') confetti(120);
         if (st.phase === 'year_reveal' && lastPhase !== 'year_reveal' && st.result && (st.result.winners || []).indexOf(ME) >= 0) confetti(140);
         if (st.phase === 'ended' && lastPhase !== 'ended') confetti(220);
@@ -1523,6 +1533,19 @@
         lastPhase = st.phase;
         lastState = st;
         renderPlayer();
+      },
+      onProgress: function (pr) {
+        if (!lastState || !pr) return;
+        // Mon propre envoi : je confirme l'heure exacte (et j'arrête d'afficher le formulaire).
+        if (pr.from === ME) {
+          lastState.answers = lastState.answers || {};
+          lastState.answers[ME] = { name: pr.name, text: raceMine, ms: pr.ms };
+          renderPlayer();
+          return;
+        }
+        // Seul le DJ a besoin de suivre l'avancement — les autres ne doivent PAS être
+        // redessinés (ils sont peut-être en train de taper leur réponse).
+        if (lastState.dj && lastState.dj.id === ME) { raceCount = pr.count; raceTotal = pr.total; renderPlayer(); }
       },
       onReady: function () { chan.sendIntent({ action: 'join', id: ME, name: name }); renderPlayer(); }
     });
@@ -1532,6 +1555,13 @@
     function me() { return lastState && lastState.players ? lastState.players[ME] : null; }
 
     function renderPlayer() {
+      /* Filet anti-perte de saisie : on mémorise ce qui est tapé (et le curseur)
+         avant de reconstruire l'écran, puis on le restaure. */
+      var _saved = {}, _focusId = null, _caret = null;
+      Array.prototype.forEach.call(app.querySelectorAll('input, textarea'), function (el) {
+        if (el.id) _saved[el.id] = el.value;
+        if (document.activeElement === el) { _focusId = el.id; try { _caret = el.selectionStart; } catch (e) {} }
+      });
       var s = lastState;
       if (!s) {
         app.innerHTML = '<div class="flex-1 flex flex-col items-center justify-center px-6 text-center"><div class="text-5xl mb-4 animate-pulse">📡</div><p class="text-white/70">Connexion à la partie…</p><button id="back" class="mt-8 text-white/40 text-sm">← Quitter</button></div>';
@@ -1552,7 +1582,7 @@
       if (imDJ && s.phase !== 'lobby' && s.phase !== 'ended') {
         var djHdr = '<div class="text-center mb-4"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' de ta série</p></div>';
         if (s.phase === 'racing') {
-          var gotD = Object.keys(s.answers || {}).length;
+          var gotD = Math.max(raceCount, Object.keys(s.answers || {}).length);
           center = '<div class="w-full animate-slidein">' + djHdr
             + '<p class="text-center text-white/60 mb-2">Lance ton morceau 🎵</p>'
             + '<div class="text-center text-3xl font-extrabold text-neon-cyan">' + gotD + '</div><p class="text-center text-white/40 text-xs mb-4">réponses reçues</p>'
@@ -1746,11 +1776,13 @@
         var raceSend = function () {
           var v = raceCollect();
           if (!v) { toast('Écris ta réponse', 'err'); vibrate(60); return; }
+          raceMine = v;
           chan.sendIntent({ action: 'race', id: ME, name: name, text: v });
           beep(880, 0.08, 'sine'); vibrate(40);
+          toast('Réponse envoyée ✓', 'ok');
         };
         bind('#raceSend', raceSend);
-        bind('#racePass', function () { chan.sendIntent({ action: 'race', id: ME, name: name, text: '' }); beep(300, 0.08, 'sine'); });
+        bind('#racePass', function () { raceMine = ''; chan.sendIntent({ action: 'race', id: ME, name: name, text: '' }); beep(300, 0.08, 'sine'); toast('Tu passes ce titre', 'info'); });
         [rT, rA, rO].forEach(function (el) { if (el) el.onkeydown = function (e) { if (e.key === 'Enter') raceSend(); }; });
       }
 
@@ -1794,6 +1826,16 @@
           beep(180, 0.25, 'square'); vibrate([0, 90, 40, 90]);
           bz.classList.add('animate-pop');
         };
+      }
+
+      // Restauration de la saisie en cours (voir le filet en haut de la fonction).
+      Object.keys(_saved).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && !el.value && _saved[id]) el.value = _saved[id];
+      });
+      if (_focusId) {
+        var f = document.getElementById(_focusId);
+        if (f) { try { f.focus(); if (_caret != null) f.setSelectionRange(_caret, _caret); } catch (e) {} }
       }
     }
 

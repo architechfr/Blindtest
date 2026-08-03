@@ -737,6 +737,9 @@
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
+      '  <button type="button" id="suWheel" class="w-full py-3.5 rounded-xl text-sm font-extrabold bg-black/30 text-white/60 mb-2">🎡 Roue des défis : OFF</button>',
+      '  <p class="text-white/40 text-xs mb-5">Activée, elle tire un <b>défi au hasard à chaque manche</b> (mode + règle spéciale) : Turbo, Titre seul, Double points, Mort subite… Le mode choisi ci-dessus est alors ignoré.</p>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔥 Bonus</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" id="suCombos" class="py-3 rounded-xl text-sm font-bold bg-neon-gold text-black">🔥 Combos</button>',
@@ -808,7 +811,15 @@
     $('#back').onclick = function () { location.hash = ''; };
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none';
-    var setupCombos = 1, setupJokers = 1;
+    var setupCombos = 1, setupJokers = 1, setupWheel = 0;
+    (function () {
+      var wb = document.getElementById('suWheel');
+      if (wb) wb.onclick = function () {
+        setupWheel = setupWheel ? 0 : 1;
+        wb.className = 'w-full py-3.5 rounded-xl text-sm font-extrabold mb-2 ' + (setupWheel ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/60');
+        wb.textContent = '🎡 Roue des défis : ' + (setupWheel ? 'ON' : 'OFF');
+      };
+    })();
     (function () {
       var cb = document.getElementById('suCombos'), jb = document.getElementById('suJokers');
       if (cb) cb.onclick = function () { setupCombos = setupCombos ? 0 : 1; cb.className = 'py-3 rounded-xl text-sm font-bold ' + (setupCombos ? 'bg-neon-gold text-black' : 'bg-black/30 text-white/50'); };
@@ -883,7 +894,7 @@
       st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
       st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
       st.turboSecs = Math.min(120, Math.max(10, parseInt(($('#turboSecs') || {}).value, 10) || 30));
-      st.combos = setupCombos; st.jokers = setupJokers;
+      st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel;
       st.goal = setupGoal;
       st.goalVal = Math.max(1, parseInt(($('#goalVal') || {}).value, 10) || (setupGoal === 'score' ? 50 : 20));
       st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
@@ -903,6 +914,7 @@
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
+      wheel: 0, challenge: null, mult: 1,
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -1084,6 +1096,16 @@
     function launchRound() {
       state.round += 1;
       resetRound();
+      /* ROUE DES DÉFIS : on tire le défi de la manche et on l'applique. */
+      if (state.wheel) {
+        var prev = state.challenge ? state.challenge.id : null;
+        var c = pickChallenge(prev, Object.keys(state.players).length >= 2);
+        state.challenge = { id: c.id, icon: c.icon, name: c.name, desc: c.desc, risky: !!c.risky };
+        state.mode = c.mode;
+        if (c.ans) state.answerMode = c.ans;
+        state.mult = c.mult || 1;
+        beep(880, 0.14, 'sine'); confetti(60);
+      } else { state.challenge = null; state.mult = 1; }
       /* Rotation du DJ : tous les N titres, un joueur différent prend les commandes.
          Le DJ choisit le morceau → il connaît la réponse → il ne marque pas ce tour-ci. */
       if (state.djRotate) {
@@ -1158,7 +1180,18 @@
       Object.keys(state.guesses).forEach(function (id) { var d = Math.abs(state.guesses[id] - yr); if (d < best) best = d; });
       var winners = [];
       Object.keys(state.guesses).forEach(function (id) {
-        if (Math.abs(state.guesses[id] - yr) === best) { winners.push(id); if (state.players[id]) state.players[id].score += state.config.pointsBuzz; }
+        if (Math.abs(state.guesses[id] - yr) === best) {
+          winners.push(id);
+          var wp = state.players[id];
+          if (wp) {
+            var g = state.config.pointsBuzz * (state.mult || 1);
+            if ((state.jok || {})[id] === 'x2') g *= 2;
+            wp.streak = (wp.streak || 0) + 1;
+            if (wp.streak > (wp.best || 0)) wp.best = wp.streak;
+            if (state.combos && wp.streak >= 2) g += Math.min(wp.streak - 1, 3);
+            wp.score += g;
+          }
+        }
       });
       state.result = { year: yr, winners: winners, best: best };
       state.phase = 'year_reveal';
@@ -1180,6 +1213,12 @@
           if (state.combos && b.streak >= 2) { combo = Math.min(b.streak - 1, 3); gain += combo; }
         } else { b.streak = 0; }
         // JOKERS : ×2 double le gain, 🛡️ annule le malus
+        // Défi « double points » / « mort subite » : le multiplicateur de la manche.
+        var mlt = state.mult || 1;
+        if (mlt > 1) {
+          // En mort subite, le malus est doublé aussi ; sinon on ne double que les gains.
+          if (correct || (state.challenge && state.challenge.risky)) gain *= mlt;
+        }
         var jk = (state.jok || {})[b.id];
         if (jk === 'x2' && correct) { gain *= 2; jokerLbl = '🃏 ×2'; }
         else if (jk === 'sh' && !correct) { gain = 0; jokerLbl = '🛡️ protégé'; }
@@ -1267,6 +1306,7 @@
           if (pl.streak > (pl.best || 0)) pl.best = pl.streak;
           if (state.combos && pl.streak >= 2) { cb = Math.min(pl.streak - 1, 3) * 5; pts += cb; }
         }
+        if ((state.mult || 1) > 1) pts *= state.mult;   // défi « Turbo doublé »
         var jlbl = '';
         if (jk === 'x2') { pts *= 2; jlbl = '🃏×2'; }
         out[id] = { pts: pts, name: a.name, ms: a.ms, grade: g, first: id === first,
@@ -1508,6 +1548,7 @@
         '  <div class="text-xs mt-2 ' + (isTurbo ? 'text-neon-lime' : 'text-white/45') + '">' + (isTurbo
              ? '⚡ Points à la vitesse : 60 garantis + jusqu\'à 40 de rapidité (+10 au plus rapide) · pas de malus, pas de vote'
              : '🏆 ' + (s.config.pointsBuzz >= 0 ? '+' : '') + s.config.pointsBuzz + ' bonne · ' + s.config.pointsWrong + ' mauvaise · +' + s.config.pointsVote + ' bon vote · ' + (s.config.pointsVoteWrong || 0) + ' mauvais vote') + '</div>',
+        '  <button id="wheelToggle" class="w-full mt-2 py-2 rounded-xl text-sm font-extrabold ' + (s.wheel ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/60') + '">🎡 Roue des défis : ' + (s.wheel ? 'ON' : 'OFF') + '</button>',
         '  <div class="text-xs font-bold uppercase text-white/50 mt-3 mb-2">👥 Équipes</div>',
         '  <div class="grid grid-cols-4 gap-2">' + [0, 2, 3, 4].map(function (n) { return '<button class="teamChip py-2 rounded-xl text-sm font-bold ' + (s.teams === n ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
         '</div>'
@@ -1756,6 +1797,15 @@
         '    </div>',
         '  </div>',
         (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
+        // Défi tiré par la roue (mis en avant, il change les règles de la manche)
+        (s.wheel && s.challenge && s.phase !== 'lobby' && s.phase !== 'ended'
+          ? '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(255,46,154,.55)">'
+            + '<div class="text-xs uppercase font-bold text-white/45">🎡 Défi de la manche</div>'
+            + '<div class="text-2xl font-extrabold mt-0.5">' + s.challenge.icon + ' ' + esc(s.challenge.name) + '</div>'
+            + '<div class="text-white/55 text-sm">' + esc(s.challenge.desc) + '</div>'
+            + ((s.mult || 1) > 1 ? '<div class="text-neon-gold font-bold text-sm mt-1">Points ×' + s.mult + (s.challenge.risky ? ' (malus aussi !)' : '') + '</div>' : '')
+            + '</div>'
+          : ''),
         (function () {
           var g = goalReached(s);
           if (!g || s.phase === 'ended' || s.phase === 'lobby') {
@@ -1796,6 +1846,7 @@
       bind('#ko', function () { validate(false); });
       bind('#half', function () { validate(true, true); });
       bind('#reopen', reopenBuzz);
+      bind('#wheelToggle', function () { s.wheel = s.wheel ? 0 : 1; if (!s.wheel) { s.challenge = null; s.mult = 1; } publish(); });
       bind('#closeRace', closeRacing);
       bind('#applyTurbo', applyTurbo);
       Array.prototype.forEach.call(document.querySelectorAll('.gradeBtn'), function (b) {
@@ -2127,6 +2178,12 @@
         '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
         (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
+        (s.wheel && s.challenge && s.phase !== 'ended'
+          ? '  <div class="text-center mt-2 mb-1 animate-slidein"><div class="inline-block px-4 py-1.5 rounded-2xl bg-neon-pink/20 ring-1 ring-neon-pink">'
+            + '<span class="font-extrabold">' + s.challenge.icon + ' ' + esc(s.challenge.name) + '</span>'
+            + ((s.mult || 1) > 1 ? '<span class="text-neon-gold font-bold text-sm"> ×' + s.mult + '</span>' : '')
+            + '<div class="text-white/55 text-xs">' + esc(s.challenge.desc) + '</div></div></div>'
+          : ''),
         (s.phase !== 'ended' && s.mode !== 'year' ? '  <div class="text-center mt-1 flex flex-wrap justify-center gap-2">'
           + (s.theme ? '<span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span>' : '')
           + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'either' ? '🎲 Titre OU Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
@@ -2279,6 +2336,33 @@
     if (!info || info.balanced || !p.played) return p.score;
     return Math.round(p.score * (info.maxPlayed / p.played));
   }
+  /* ---------------------------------------------------------------
+     ROUE DES DÉFIS — à chaque manche, un défi est tiré au sort.
+     Un défi = un mode de jeu et/ou un modificateur (points, réponse
+     attendue). Le tirage évite de répéter le défi précédent.
+     --------------------------------------------------------------- */
+  var CHALLENGES = [
+    { id: 'classic',  icon: '🔊', name: 'Classique',      desc: 'Le premier qui buzze répond',        mode: 'classic' },
+    { id: 'turbo',    icon: '⚡', name: 'Turbo',           desc: 'Tout le monde répond, vitesse = points', mode: 'turbo' },
+    { id: 'year',     icon: '📅', name: 'Devine l\'année', desc: 'Le plus proche de l\'année gagne',   mode: 'year' },
+    { id: 'title',    icon: '💿', name: 'Titre seul',      desc: 'Seul le titre compte',               mode: 'classic', ans: 'title' },
+    { id: 'artist',   icon: '🎤', name: 'Artiste seul',    desc: 'Seul l\'artiste compte',             mode: 'classic', ans: 'artist' },
+    { id: 'both',     icon: '🎵', name: 'Titre + Artiste', desc: 'Les deux sont exigés !',             mode: 'classic', ans: 'both' },
+    { id: 'double',   icon: '💰', name: 'Double points',   desc: 'Tous les points comptent double',    mode: 'classic', mult: 2 },
+    { id: 'sudden',   icon: '☠️', name: 'Mort subite',     desc: 'Points doublés… malus aussi !',      mode: 'classic', mult: 2, risky: true },
+    { id: 'turbo2',   icon: '🚀', name: 'Turbo doublé',    desc: 'Turbo avec points ×2',               mode: 'turbo',   mult: 2 },
+    { id: 'hum',      icon: '🎶', name: 'Fredonne',        desc: 'Un joueur fredonne, les autres devinent', mode: 'fredonne' }
+  ];
+  function pickChallenge(prevId, allowHum) {
+    var pool = CHALLENGES.filter(function (c) {
+      if (c.id === prevId) return false;              // pas deux fois le même d'affilée
+      if (c.mode === 'fredonne' && !allowHum) return false;
+      return true;
+    });
+    if (!pool.length) pool = CHALLENGES;
+    return pool[(Math.random() * pool.length) | 0];
+  }
+
   /* Objectif de fin de partie atteint ? On le SIGNALE sans couper brutalement :
      l'hôte garde la main (et l'avertissement d'équité du cycle DJ s'applique). */
   function goalReached(s) {
@@ -2627,6 +2711,12 @@
         + '<b class="text-neon-cyan">+ 0 à 40 pts</b> selon ta rapidité · <b class="text-neon-gold">+10</b> au plus rapide<br>'
         + '≈ à moitié = la moitié · faux ou passe = <b>0</b>, aucun malus<br>'
         + '<span class="text-white/50 text-xs">Soit 60 à 100 points par bonne réponse — tout le monde marque, l\'écart se fait au chrono.</span>'),
+      sec('🎡 La roue des défis',
+        'Si elle est activée, <b>un défi est tiré au hasard à chaque manche</b> — et il change les règles :<br>'
+        + '🔊 Classique · ⚡ Turbo · 📅 Année · 🎶 Fredonne<br>'
+        + '💿 Titre seul · 🎤 Artiste seul · 🎵 Titre + Artiste<br>'
+        + '<b class="text-neon-gold">💰 Double points</b> · <b class="text-rose-400">☠️ Mort subite</b> (points ET malus doublés) · <b class="text-neon-gold">🚀 Turbo doublé</b><br>'
+        + '<span class="text-white/50 text-xs">Jamais deux fois le même d\'affilée. Le défi s\'affiche sur tous les écrans avant de jouer.</span>'),
       sec('🔥 Combos et 🃏 Jokers',
         '<b>Combo</b> : 2 bonnes réponses d\'affilée = <b class="text-neon-gold">+1</b>, 3 d\'affilée = <b class="text-neon-gold">+2</b>, 4 et + = <b class="text-neon-gold">+3</b>. Une erreur remet la série à zéro.<br>'
         + '<b>🃏 Joker ×2</b> : double tes points sur la manche.<br>'

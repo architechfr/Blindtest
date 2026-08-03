@@ -176,10 +176,12 @@
     /* ====================== ROUE & MENU RÉGLAGES ====================== */
     .gear { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 14px; z-index: 5;
       width: 42px; height: 42px; border-radius: 50%; }
-    #settings.hidden { display: none; }
-    #settings { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; justify-content: center;
+    #settings.hidden, #picker.hidden, #scanner.hidden { display: none; }
+    #settings, #picker, #scanner { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; justify-content: center;
       background: rgba(3,0,10,.62); backdrop-filter: blur(5px); }
-    @media (min-width: 540px) { #settings { align-items: center; } }
+    @media (min-width: 540px) { #settings, #picker, #scanner { align-items: center; } }
+    .dz-card { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 14px; background: rgba(0,0,0,.25); }
+    .dz-card img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
     .set-panel { width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto;
       border-radius: 26px 26px 0 0;
       background: linear-gradient(180deg, rgba(22,7,44,.97), rgba(8,2,20,.99));
@@ -210,8 +212,13 @@
 
   <main id="app" class="w-full flex flex-col"></main>
 
-  <!-- Menu Réglages (overlay) -->
+  <!-- Menu Réglages + Sélecteur de morceau + Scanner QR (overlays) -->
   <div id="settings" class="hidden"></div>
+  <div id="picker" class="hidden"></div>
+  <div id="scanner" class="hidden"></div>
+
+  <!-- Lecteur audio (extraits Deezer, sur l'appareil hôte) -->
+  <audio id="dzaudio" preload="auto"></audio>
 
   <!-- Confettis + Toasts -->
   <canvas id="confetti" aria-hidden="true"></canvas>
@@ -312,6 +319,107 @@
     } catch (e) {}
   }
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') keepAwake(); });
+
+  /* --------------------------------------------------------------------------
+     Lecteur Deezer (recherche JSONP sans clé/serveur + lecture des extraits 30s)
+     -------------------------------------------------------------------------- */
+  function jsonp(url, cb) {
+    var name = 'dz_' + Math.floor(Math.random() * 1e9) + (jsonp._n = (jsonp._n || 0) + 1);
+    var s = document.createElement('script');
+    var done = false;
+    var to = setTimeout(function () { if (!done) { done = true; cleanup(); cb(null); } }, 8000);
+    function cleanup() { clearTimeout(to); delete window[name]; if (s.parentNode) s.remove(); }
+    window[name] = function (data) { if (done) return; done = true; cleanup(); cb(data); };
+    s.onerror = function () { if (!done) { done = true; cleanup(); cb(null); } };
+    s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'output=jsonp&callback=' + name;
+    document.body.appendChild(s);
+  }
+  function deezerSearch(q, cb) {
+    if (!q) { cb([]); return; }
+    jsonp('https://api.deezer.com/search?limit=12&q=' + encodeURIComponent(q), function (d) {
+      cb(d && d.data ? d.data.filter(function (t) { return t.preview; }) : null);
+    });
+  }
+  function deezerTrack(id, cb) { jsonp('https://api.deezer.com/track/' + id, function (d) { cb(d || null); }); }
+
+  var dzAudio = document.getElementById('dzaudio');
+  function dzPlay(url) { if (!dzAudio || !url) return; try { if (dzAudio.src !== url) dzAudio.src = url; dzAudio.currentTime = 0; dzAudio.play().catch(function () {}); } catch (e) {} }
+  function dzResume() { if (dzAudio) dzAudio.play().catch(function () {}); }
+  function dzPause() { if (dzAudio) try { dzAudio.pause(); } catch (e) {} }
+
+  /* Comparaison floue réponse <-> morceau (pour la suggestion ✓/✗). */
+  function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)/g, ' ').replace(/feat.*$/, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function fuzzyHit(answer, track) {
+    if (!track) return null;
+    var a = norm(answer); if (!a) return null;
+    var title = norm(track.title), artist = norm(track.artist);
+    function inc(h, n) { return n && n.length > 1 && h.indexOf(n) >= 0; }
+    if (inc(a, title) || inc(title, a) || inc(a, artist) || inc(artist, a)) return 'ok';
+    var aw = a.split(' ').filter(function (w) { return w.length > 2; });
+    var tw = (title + ' ' + artist).split(' ');
+    var common = aw.filter(function (w) { return tw.indexOf(w) >= 0; }).length;
+    return common >= 1 ? 'ok' : 'ko';
+  }
+
+  /* --------------------------------------------------------------------------
+     Scanner QR intégré (caméra + décodage jsQR chargé à la demande)
+     -------------------------------------------------------------------------- */
+  function loadJsQR(cb) {
+    if (window.jsQR) return cb(true);
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+    s.onload = function () { cb(!!window.jsQR); };
+    s.onerror = function () { cb(false); };
+    document.body.appendChild(s);
+  }
+  var scanStream = null, scanRAF = 0;
+  function stopScan() {
+    if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = 0; }
+    if (scanStream) { try { scanStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} scanStream = null; }
+    var el = document.getElementById('scanner'); if (el) { el.classList.add('hidden'); el.innerHTML = ''; }
+  }
+  function openScanner() {
+    var el = document.getElementById('scanner'); if (!el) return;
+    el.innerHTML = '<div class="set-panel p-5 text-center animate-slidein">'
+      + '<div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">SCANNER LE QR</h2><button id="scClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>'
+      + '<div class="relative rounded-2xl overflow-hidden bg-black" style="aspect-ratio:1"><video id="scvid" playsinline muted class="w-full h-full object-cover"></video><div class="absolute inset-6 border-2 border-neon-cyan rounded-2xl pointer-events-none"></div></div>'
+      + '<p id="scmsg" class="text-white/60 text-sm mt-3">Vise le QR code affiché par l\'hôte…</p>'
+      + '<button id="scManual" class="mt-2 text-white/40 text-sm underline">Saisir le code à la main</button>'
+      + '</div>';
+    el.classList.remove('hidden');
+    el.onclick = function (e) { if (e.target === el) stopScan(); };
+    bind('#scClose', stopScan);
+    bind('#scManual', function () { stopScan(); location.hash = ''; setTimeout(function () { var i = document.getElementById('joinCode'); if (i) i.focus(); }, 120); });
+    var msg = function (t) { var m = document.getElementById('scmsg'); if (m) m.textContent = t; };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg('Caméra non disponible sur cet appareil. Saisis le code à la main.'); return; }
+    loadJsQR(function (ok) {
+      if (!ok) { msg('Scanner indisponible (réseau ?). Saisis le code à la main.'); return; }
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function (stream) {
+        scanStream = stream;
+        var v = document.getElementById('scvid'); if (!v) { stopScan(); return; }
+        v.srcObject = stream; v.play().catch(function () {});
+        var cv = document.createElement('canvas'), cx = cv.getContext('2d');
+        function tick() {
+          if (!scanStream) return;
+          if (v.readyState >= 2 && v.videoWidth) {
+            cv.width = v.videoWidth; cv.height = v.videoHeight;
+            cx.drawImage(v, 0, 0, cv.width, cv.height);
+            var img = cx.getImageData(0, 0, cv.width, cv.height);
+            var res = window.jsQR(img.data, img.width, img.height);
+            if (res && res.data) {
+              var m = res.data.match(/join=([A-Za-z0-9]{6})/);
+              if (m) { vibrate(60); beep(880, 0.1, 'sine'); var code = m[1].toUpperCase(); stopScan(); location.hash = 'join=' + code; return; }
+              msg('QR détecté, mais ce n\'est pas une partie Blind Test.');
+            }
+          }
+          scanRAF = requestAnimationFrame(tick);
+        }
+        scanRAF = requestAnimationFrame(tick);
+      }).catch(function (err) {
+        msg(err && err.name === 'NotAllowedError' ? 'Accès caméra refusé. Autorise la caméra, ou saisis le code.' : 'Impossible d\'ouvrir la caméra. Saisis le code à la main.');
+      });
+    });
+  }
 
   /* Confettis plein écran (canvas, sans dépendance) */
   var _confCv = document.getElementById('confetti');
@@ -445,6 +553,7 @@
       '        class="flex-1 bg-black/40 rounded-xl px-4 py-4 text-2xl font-extrabold tracking-[0.3em] text-center uppercase outline-none focus:ring-2 ring-neon-cyan" />',
       '      <button id="joinBtn" class="px-5 rounded-xl bg-neon-cyan text-black font-extrabold text-xl active:animate-pop">GO</button>',
       '    </div>',
+      '    <button id="scanBtn" class="mt-3 w-full py-2.5 rounded-xl glass font-bold text-sm">📷 Scanner le QR code</button>',
       '  </div>',
       (standalone ? '' : '  <button id="installApp" class="mt-6 w-full py-3 rounded-xl glass font-bold text-sm">📲 Installer l\'app (plein écran)</button>'),
       '  <p class="text-white/30 text-xs mt-8 text-center">Temps réel via Supabase · AXION</p>',
@@ -456,6 +565,7 @@
       if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
       else toast('Menu du navigateur → « Ajouter à l\'écran d\'accueil » pour le plein écran', 'info');
     });
+    bind('#scanBtn', openScanner);
     var code = $('#joinCode');
     code.oninput = function () { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
     function join() {
@@ -493,7 +603,8 @@
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="fredonne">🎶 Fredonne</button>',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="year">📅 Année</button>',
       '  </div>',
-      '  <p class="text-white/40 text-xs mb-5">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
+      '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
+      '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Équipes</p>',
       '  <div class="grid grid-cols-4 gap-2 mb-6">' + [0, 2, 3, 4].map(function (n) { return '<button type="button" class="suTeam py-3 rounded-xl text-sm font-bold ' + (n === 0 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
@@ -542,6 +653,7 @@
       // route() appellera startHost() (entrée unique, refresh-safe).
       var st = initialState(genCode(), hostName, partyName, cfg);
       st.mode = setupMode; st.teams = setupTeams;
+      st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
       store.set('hostGame', st);
       location.hash = 'host';
     };
@@ -551,7 +663,8 @@
     return {
       code: code, hostName: hostName, partyName: partyName, config: cfg,
       round: 0, phase: 'lobby', theme: '', mode: 'classic', teams: 0,
-      source: null, _srcIdx: -1, year: null, guesses: {},
+      source: null, _srcIdx: -1, fredEvery: 10, fredCount: 0, year: null, guesses: {},
+      reveal: null, suggest: null,
       buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
       players: {},   // id -> { id, name, score, team }
       history: []
@@ -565,6 +678,7 @@
     var code = state.code;
     store.set('hostGame', state);
     keepAwake();
+    var roundTrack = null; // morceau Deezer choisi pour la manche (local hôte, jamais diffusé)
 
     function persist() { store.set('hostGame', state); }
     function publish() { persist(); if (chan) chan.sendState(state); renderHost(); }
@@ -605,12 +719,14 @@
           var pl = ensurePlayer(p.id, p.name);
           state.buzzer = { id: pl.id, name: pl.name };
           state.phase = 'answering';
+          dzPause(); // coupe l'extrait dès le buzz
           beep(180, 0.35, 'square'); vibrate([0, 120, 60, 120]);
           publish();
         }
       } else if (p.action === 'answer') {
         if (state.phase === 'answering' && state.buzzer && state.buzzer.id === p.id) {
           state.answer = String(p.text || '').slice(0, 120);
+          state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack) : null;
           state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
           beep(520, 0.12, 'sine');
           publish();
@@ -652,25 +768,33 @@
     /* Actions hôte (machine à états) */
     function resetRound() {
       state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
+      state.reveal = null; state.suggest = null;
     }
     function armBuzz() {
       state.phase = 'armed';
       state.buzzAt = Date.now() + BUZZ_LOCK_MS;
       publish();
       setTimeout(function () {
-        if (state.phase === 'armed') { state.phase = 'buzzing'; beep(740, 0.12, 'sine'); publish(); }
+        if (state.phase === 'armed') {
+          state.phase = 'buzzing'; beep(740, 0.12, 'sine');
+          if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview);
+          publish();
+        }
       }, BUZZ_LOCK_MS);
     }
     function launchRound() {
       state.round += 1;
       resetRound();
-      if (state.mode === 'year') { state.phase = 'year_guess'; publish(); return; }
+      if (state.mode === 'year') { state.phase = 'year_guess'; if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview); publish(); return; }
       if (state.mode === 'fredonne') {
         var ids = leaderboardArr(state.players).map(function (p) { return p.id; });
         if (!ids.length) { toast('Aucun joueur pour fredonner', 'err'); state.round -= 1; state.phase = 'lobby'; publish(); return; }
-        state._srcIdx = state._srcIdx + 1;
+        var every = state.fredEvery || 10;
+        // On change de fredonneur seulement tous les "every" morceaux.
+        if (!state.source || (state.fredCount % every === 0)) state._srcIdx = state._srcIdx + 1;
         var sid = ids[state._srcIdx % ids.length];
         state.source = { id: sid, name: state.players[sid].name };
+        state.fredCount = (state.fredCount || 0) + 1;
       } else {
         state.source = null;
       }
@@ -694,7 +818,10 @@
     }
     function revealYear(yr) {
       yr = parseInt(yr, 10);
-      if (isNaN(yr)) { toast('Entre une année valide', 'err'); return; }
+      if (isNaN(yr) && roundTrack && roundTrack.year) yr = roundTrack.year;
+      if (isNaN(yr)) { toast('Entre une année (ou choisis un morceau Deezer)', 'err'); return; }
+      dzPause();
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
       state.year = yr;
       var best = Infinity;
       Object.keys(state.guesses).forEach(function (id) { var d = Math.abs(state.guesses[id] - yr); if (d < best) best = d; });
@@ -718,6 +845,8 @@
         if (agreed && state.players[vid]) state.players[vid].score += state.config.pointsVote;
       });
       state.result = { correct: correct };
+      dzPause();
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
       state.phase = 'reveal';
       state.history.push({
         round: state.round, buzzer: state.buzzer, answer: state.answer,
@@ -727,10 +856,11 @@
       if (correct) confetti(150);
       publish();
     }
-    function endGame() { state.phase = 'ended'; confetti(240); publish(); }
+    function endGame() { dzPause(); state.phase = 'ended'; confetti(240); publish(); }
     function replay() {
       Object.keys(state.players).forEach(function (id) { state.players[id].score = 0; });
-      state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.source = null;
+      state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
+      dzPause(); roundTrack = null;
       resetRound(); state.history = [];
       publish();
     }
@@ -740,8 +870,60 @@
       return { up: up, down: down };
     }
 
+    /* Sélecteur de morceau Deezer (overlay) */
+    var pickerEl = document.getElementById('picker');
+    function closePicker() { if (pickerEl) { pickerEl.classList.add('hidden'); pickerEl.innerHTML = ''; } dzPause(); }
+    function openMusicPicker() {
+      if (!pickerEl) return;
+      var lastResults = [];
+      function render(results, q, loading) {
+        var list = '';
+        if (loading) list = '<p class="text-white/50 text-center py-6">Recherche…</p>';
+        else if (results === null) list = '<p class="text-rose-400 text-center py-6">Erreur réseau, réessaie.</p>';
+        else if (results && results.length) {
+          list = results.map(function (t, i) {
+            var cover = (t.album && t.album.cover_small) || '';
+            return '<div class="dz-card mb-2">'
+              + '<img src="' + esc(cover) + '" alt="" />'
+              + '<div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(t.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(t.artist ? t.artist.name : '') + '</div></div>'
+              + '<button class="dzPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">▶</button>'
+              + '<button class="dzPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">Choisir</button>'
+              + '</div>';
+          }).join('');
+        } else if (results) list = '<p class="text-white/40 text-center py-6">Aucun résultat.</p>';
+        pickerEl.innerHTML = [
+          '<div class="set-panel p-5 animate-slidein">',
+          '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">CHOISIR UN MORCEAU</h2><button id="dzClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+          '  <div class="flex gap-2 mb-3"><input id="dzq" value="' + esc(q || '') + '" placeholder="Titre ou artiste…" class="flex-1 bg-black/40 rounded-xl px-4 py-3 outline-none focus:ring-2 ring-neon-cyan" /><button id="dzgo" class="px-4 rounded-xl bg-neon-cyan text-black font-extrabold">🔎</button></div>',
+          '  <div id="dzlist" class="overflow-y-auto" style="max-height:55dvh">' + list + '</div>',
+          '  <p class="text-white/30 text-xs text-center mt-3">Extraits 30 s via Deezer · joués sur cet appareil</p>',
+          '</div>'
+        ].join('');
+        pickerEl.classList.remove('hidden');
+        pickerEl.onclick = function (e) { if (e.target === pickerEl) closePicker(); };
+        bind('#dzClose', closePicker);
+        var go = function () { var q2 = ($('#dzq') || {}).value || ''; render(null, q2, true); deezerSearch(q2, function (res) { lastResults = (res && res.length) ? res : (res === null ? null : []); render(lastResults, q2, false); }); };
+        bind('#dzgo', go);
+        var qi = $('#dzq'); if (qi) qi.onkeydown = function (e) { if (e.key === 'Enter') go(); };
+        Array.prototype.forEach.call(pickerEl.querySelectorAll('.dzPrev'), function (b) { b.onclick = function () { var t = lastResults[+b.getAttribute('data-i')]; if (t) dzPlay(t.preview); }; });
+        Array.prototype.forEach.call(pickerEl.querySelectorAll('.dzPick'), function (b) {
+          b.onclick = function () {
+            var t = lastResults[+b.getAttribute('data-i')]; if (!t) return;
+            dzPause();
+            roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
+            deezerTrack(t.id, function (full) { if (full && full.release_date) roundTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null; renderHost(); });
+            closePicker(); toast('Morceau prêt 🔒', 'ok'); renderHost();
+          };
+        });
+        if (qi && !q) qi.focus();
+      }
+      var initQ = state.theme || '';
+      render([], initQ, false);
+      if (initQ) { render(null, initQ, true); deezerSearch(initQ, function (res) { lastResults = res || []; render(lastResults, initQ, false); }); }
+    }
+
     current = {
-      destroy: function () { if (chan) chan.close(); }
+      destroy: function () { if (chan) chan.close(); dzPause(); }
     };
 
     /* --- Rendu de l'écran hôte --- */
@@ -774,6 +956,28 @@
 
       var isFred = s.mode === 'fredonne', isYear = s.mode === 'year';
       var modeIcon = isYear ? '📅' : isFred ? '🎶' : '🎵';
+      var fredEvery = s.fredEvery || 10;
+      var fredTag = (isFred && s.fredCount) ? ' · chanson ' + (((s.fredCount - 1) % fredEvery) + 1) + '/' + fredEvery : '';
+
+      // Lecteur Deezer (modes à enceinte uniquement)
+      var deezerOn = prefs.deezer && (s.mode === 'classic' || s.mode === 'year');
+      var prepPhase = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal');
+      var dzBar = '';
+      if (deezerOn && prepPhase) {
+        dzBar = '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
+          ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">🔒 Morceau prêt (caché)</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
+          : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 Choisir un morceau (Deezer)</button>') + '</div>';
+      }
+      var dzCtrl = '';
+      if (deezerOn && roundTrack && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess')) {
+        dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
+          + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'
+          + '<button id="dzReplay" class="px-3 py-2 rounded-lg glass text-sm">🔁 Rejouer</button>'
+          + '<span class="text-white/40 text-xs ml-1">🔊</span>'
+          + '<input id="dzvol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1" />'
+          + '</div>';
+      }
+
       var phaseBlock = '';
       if (s.phase === 'lobby') {
         var nb = lb.length;
@@ -797,10 +1001,10 @@
           '</div>'
         ].join('');
       } else if (s.phase === 'armed') {
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">' + (isFred ? '🎶 ' + esc(s.source ? s.source.name : '') + ' va fredonner' : 'Buzz verrouillé…') + '</p><p class="text-white/50">' + (isFred ? 'Tiens-toi prêt à buzzer !' : 'Lance le morceau maintenant !') + '</p></div>';
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">' + (isFred ? '🎶 ' + esc(s.source ? s.source.name : '') + ' va fredonner' : 'Buzz verrouillé…') + '</p><p class="text-white/50">' + (isFred ? 'Tiens-toi prêt à buzzer !' + fredTag : 'Lance le morceau maintenant !') + '</p></div>';
       } else if (s.phase === 'buzzing') {
         var hostCanBuzz = isFred && (!s.source || s.source.id !== ME);
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…</p>' + (hostCanBuzz ? '<button id="hostBuzz" class="mt-5 w-full py-5 rounded-2xl text-2xl font-extrabold border-4 border-neon-cyan bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_40px_rgba(255,46,154,.6)] active:animate-pop">BUZZER 🔔</button>' : '') + '</div>';
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>' + (hostCanBuzz ? '<button id="hostBuzz" class="mt-5 w-full py-5 rounded-2xl text-2xl font-extrabold border-4 border-neon-cyan bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_40px_rgba(255,46,154,.6)] active:animate-pop">BUZZER 🔔</button>' : '') + '</div>';
       } else if (s.phase === 'answering') {
         if (s.buzzer.id === ME) {
           phaseBlock = [
@@ -821,6 +1025,7 @@
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
           '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + '</p>',
           '  <div class="text-3xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-xl">(réponse orale)</span>') + '</div>',
+          (s.suggest ? '  <p class="text-sm font-bold mb-1 ' + (s.suggest === 'ok' ? 'text-neon-lime' : 'text-rose-400') + '">💡 Suggestion : ' + (s.suggest === 'ok' ? '✓ probablement correct' : '✗ probablement faux') + '</p>' : ''),
           '  <div class="flex justify-center gap-6 text-xl my-4"><span>👍 ' + t.up + '</span><span>👎 ' + t.down + '</span></div>',
           '  <div class="grid grid-cols-2 gap-3">',
           '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
@@ -862,7 +1067,8 @@
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
           '  <p class="text-white/55 uppercase text-sm">L\'année était</p>',
           '  <div class="text-5xl font-extrabold text-neon-gold my-2 text-glow">' + s.year + '</div>',
-          (winNames.length ? '  <p class="text-neon-lime font-bold mb-3">🏆 ' + esc(winNames.join(', ')) + ' (+' + s.config.pointsBuzz + ')</p>' : '  <p class="text-white/50 mb-3">Personne n\'a deviné</p>'),
+               revealCard(s.reveal),
+          (winNames.length ? '  <p class="text-neon-lime font-bold mb-3 mt-2">🏆 ' + esc(winNames.join(', ')) + ' (+' + s.config.pointsBuzz + ')</p>' : '  <p class="text-white/50 mb-3 mt-2">Personne n\'a deviné</p>'),
           '  <div class="space-y-1 text-sm mb-4 text-left">' + yrRows + '</div>',
           '  <div class="grid grid-cols-2 gap-3">',
           '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
@@ -876,6 +1082,7 @@
           '  <div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div>',
           '  <p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
           '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + (s.result.correct ? ' +' + s.config.pointsBuzz : ' ' + (s.config.pointsWrong >= 0 ? '+' : '') + s.config.pointsWrong) + ' pts</p>',
+               revealCard(s.reveal),
           '  <div class="grid grid-cols-2 gap-3 mt-6">',
           '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
           '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
@@ -908,6 +1115,8 @@
         '  </div>',
         (showTheme ? modeBar : ''),
         (showTheme ? themeBar : ''),
+        dzBar,
+        dzCtrl,
         '  <div class="mb-5">' + phaseBlock + '</div>',
         '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
         '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/40">' + esc(s.partyName) + '</span></div>',
@@ -938,6 +1147,10 @@
       bind('#hostSend', function () { var e = $('#hostAns'); hostAnswer(e ? e.value.trim() : ''); });
       bind('#hostOral', function () { hostAnswer(''); });
       bind('#yrReveal', function () { var e = $('#yrTarget'); revealYear(e ? e.value : ''); });
+      bind('#dzopen', openMusicPicker);
+      bind('#dzToggle', function () { if (dzAudio && dzAudio.paused) dzResume(); else dzPause(); });
+      bind('#dzReplay', function () { if (roundTrack) dzPlay(roundTrack.preview); });
+      var dv = $('#dzvol'); if (dv) dv.oninput = function () { if (dzAudio) dzAudio.volume = parseFloat(dv.value); };
       Array.prototype.forEach.call(document.querySelectorAll('.modeChip'), function (b) { b.onclick = function () { s.mode = b.getAttribute('data-mode'); publish(); }; });
       Array.prototype.forEach.call(document.querySelectorAll('.teamChip'), function (b) { b.onclick = function () { s.teams = parseInt(b.getAttribute('data-teams'), 10) || 0; reassignTeams(); publish(); }; });
       Array.prototype.forEach.call(document.querySelectorAll('.themeChip'), function (b) { b.onclick = function () { s.theme = b.getAttribute('data-theme'); publish(); }; });
@@ -1090,10 +1303,10 @@
       } else if (s.phase === 'year_reveal') {
         var myG = s.guesses ? s.guesses[ME] : null;
         var iWon = s.result && (s.result.winners || []).indexOf(ME) >= 0;
-        center = '<div class="text-center animate-slidein"><p class="text-white/55 uppercase text-sm">L\'année était</p><div class="text-6xl font-extrabold text-neon-gold my-2 text-glow">' + (s.year || '?') + '</div>' + (myG != null ? '<p class="text-white/70">Ton choix : <span class="font-bold">' + myG + '</span></p>' : '<p class="text-white/40">Tu n\'as pas répondu</p>') + (iWon ? '<p class="text-neon-lime font-extrabold text-xl mt-2">🏆 Gagné ! +' + s.config.pointsBuzz + '</p>' : '') + '</div>';
+        center = '<div class="text-center animate-slidein"><p class="text-white/55 uppercase text-sm">L\'année était</p><div class="text-6xl font-extrabold text-neon-gold my-2 text-glow">' + (s.year || '?') + '</div>' + (myG != null ? '<p class="text-white/70">Ton choix : <span class="font-bold">' + myG + '</span></p>' : '<p class="text-white/40">Tu n\'as pas répondu</p>') + (iWon ? '<p class="text-neon-lime font-extrabold text-xl mt-2">🏆 Gagné ! +' + s.config.pointsBuzz + '</p>' : '') + revealCard(s.reveal) + '</div>';
       } else if (s.phase === 'reveal') {
         var goodForMe = isBuzzer && s.result.correct;
-        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p></div>';
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p>' + revealCard(s.reveal) + '</div>';
       } else if (s.phase === 'ended') {
         center = [
           '<div class="w-full text-center animate-slidein">',
@@ -1236,6 +1449,12 @@
     }).join('') + '</div>';
   }
 
+  /* Carte « morceau révélé » (pochette + titre + artiste + année). */
+  function revealCard(r) {
+    if (!r) return '';
+    return '<div class="mt-4 flex items-center gap-3 justify-center"><img src="' + esc(r.cover || '') + '" class="w-14 h-14 rounded-lg object-cover" alt="" /><div class="text-left min-w-0"><div class="font-extrabold truncate">' + esc(r.title || '') + '</div><div class="text-white/50 text-sm truncate">' + esc(r.artist || '') + (r.year ? ' · ' + r.year : '') + '</div></div></div>';
+  }
+
   /* Podium top 3 (écran de fin). */
   function renderPodium(lb) {
     if (!lb.length) return '';
@@ -1289,7 +1508,8 @@
     theme: store.get('theme', 'synthwave'),
     muted: store.get('muted', false),
     novib: store.get('novib', false),
-    noanim: store.get('noanim', false)
+    noanim: store.get('noanim', false),
+    deezer: store.get('deezer', true)
   };
   function applyPrefs() {
     document.body.setAttribute('data-theme', prefs.theme || 'synthwave');
@@ -1342,6 +1562,7 @@
       '    <div class="set-row" style="border-top:none"><span>🔊 Sons</span><button id="tgSound" class="toggle ' + (prefs.muted ? '' : 'on') + '"></button></div>',
       '    <div class="set-row"><span>📳 Vibrations</span><button id="tgVib" class="toggle ' + (prefs.novib ? '' : 'on') + '"></button></div>',
       '    <div class="set-row"><span>🎉 Animations &amp; confettis</span><button id="tgAnim" class="toggle ' + (prefs.noanim ? '' : 'on') + '"></button></div>',
+      '    <div class="set-row"><span>🎵 Lecteur Deezer intégré</span><button id="tgDeezer" class="toggle ' + (prefs.deezer ? 'on' : '') + '"></button></div>',
       '  </div>',
 
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Application</p>',
@@ -1385,6 +1606,7 @@
     bind('#tgSound', function () { prefs.muted = !prefs.muted; store.set('muted', prefs.muted); if (!prefs.muted) beep(660, 0.08, 'sine'); openSettings(); });
     bind('#tgVib', function () { prefs.novib = !prefs.novib; store.set('novib', prefs.novib); if (!prefs.novib) vibrate(60); openSettings(); });
     bind('#tgAnim', function () { prefs.noanim = !prefs.noanim; store.set('noanim', prefs.noanim); applyPrefs(); if (!prefs.noanim) confetti(50); openSettings(); });
+    bind('#tgDeezer', function () { prefs.deezer = !prefs.deezer; store.set('deezer', prefs.deezer); openSettings(); });
 
     bind('#setInstall', function () { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); } });
     bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });

@@ -433,6 +433,122 @@
   function playlistById(id) { for (var i = 0; i < PLAYLISTS.length; i++) if (PLAYLISTS[i].id === id) return PLAYLISTS[i]; return null; }
 
   /* ---------------------------------------------------------------
+     FILTRES COMBINABLES — chaque artiste est étiqueté par décennie(s),
+     genre(s) et langue. On peut donc croiser les critères :
+     « années 90 » + « rock » + « français » → Noir Désir, Téléphone…
+     d = décennies · g = genres · l = langue (fr / en / int)
+     --------------------------------------------------------------- */
+  var ARTISTS = [
+    // ---- Rock / metal ----
+    { n: 'Nirvana', d: [90], g: ['rock'], l: 'en' }, { n: 'Oasis', d: [90], g: ['rock'], l: 'en' },
+    { n: 'Radiohead', d: [90], g: ['rock'], l: 'en' }, { n: 'Red Hot Chili Peppers', d: [90, 2000], g: ['rock'], l: 'en' },
+    { n: 'Blur', d: [90], g: ['rock'], l: 'en' }, { n: 'The Cranberries', d: [90], g: ['rock'], l: 'en' },
+    { n: 'Green Day', d: [90, 2000], g: ['rock'], l: 'en' }, { n: 'Linkin Park', d: [2000], g: ['rock'], l: 'en' },
+    { n: 'Muse', d: [2000, 2010], g: ['rock'], l: 'en' }, { n: 'Coldplay', d: [2000, 2010], g: ['rock', 'pop'], l: 'en' },
+    { n: 'Arctic Monkeys', d: [2000, 2010], g: ['rock'], l: 'en' }, { n: 'The Killers', d: [2000], g: ['rock'], l: 'en' },
+    { n: 'AC/DC', d: [70, 80], g: ['rock'], l: 'en' }, { n: 'Queen', d: [70, 80], g: ['rock'], l: 'en' },
+    { n: 'Led Zeppelin', d: [70], g: ['rock'], l: 'en' }, { n: 'The Rolling Stones', d: [60, 70], g: ['rock'], l: 'en' },
+    { n: 'The Beatles', d: [60], g: ['rock', 'pop'], l: 'en' }, { n: 'Pink Floyd', d: [70], g: ['rock'], l: 'en' },
+    { n: 'Metallica', d: [80, 90], g: ['rock', 'metal'], l: 'en' }, { n: 'Guns N\' Roses', d: [80, 90], g: ['rock'], l: 'en' },
+    { n: 'Bon Jovi', d: [80, 90], g: ['rock'], l: 'en' }, { n: 'The Police', d: [80], g: ['rock'], l: 'en' },
+    { n: 'U2', d: [80, 90], g: ['rock'], l: 'en' }, { n: 'Foo Fighters', d: [90, 2000], g: ['rock'], l: 'en' },
+    // ---- Rock français ----
+    { n: 'Téléphone', d: [80], g: ['rock'], l: 'fr' }, { n: 'Noir Désir', d: [90, 2000], g: ['rock'], l: 'fr' },
+    { n: 'Indochine', d: [80, 90, 2000], g: ['rock', 'pop'], l: 'fr' }, { n: 'Louise Attaque', d: [90], g: ['rock'], l: 'fr' },
+    { n: 'Mano Negra', d: [90], g: ['rock'], l: 'fr' }, { n: 'Trust', d: [80], g: ['rock'], l: 'fr' },
+    { n: 'Kyo', d: [2000], g: ['rock', 'pop'], l: 'fr' }, { n: 'Superbus', d: [2000], g: ['rock', 'pop'], l: 'fr' },
+    { n: 'Shaka Ponk', d: [2010], g: ['rock'], l: 'fr' }, { n: 'BB Brunes', d: [2000, 2010], g: ['rock'], l: 'fr' },
+    // ---- Pop internationale ----
+    { n: 'Michael Jackson', d: [80, 90], g: ['pop', 'funk'], l: 'en' }, { n: 'Madonna', d: [80, 90], g: ['pop'], l: 'en' },
+    { n: 'Prince', d: [80], g: ['pop', 'funk'], l: 'en' }, { n: 'a-ha', d: [80], g: ['pop'], l: 'en' },
+    { n: 'Depeche Mode', d: [80, 90], g: ['pop', 'electro'], l: 'en' }, { n: 'Cyndi Lauper', d: [80], g: ['pop'], l: 'en' },
+    { n: 'Whitney Houston', d: [80, 90], g: ['pop', 'rnb'], l: 'en' }, { n: 'Tina Turner', d: [80], g: ['pop', 'rock'], l: 'en' },
+    { n: 'Spice Girls', d: [90], g: ['pop'], l: 'en' }, { n: 'Backstreet Boys', d: [90], g: ['pop'], l: 'en' },
+    { n: 'Britney Spears', d: [90, 2000], g: ['pop'], l: 'en' }, { n: 'Mariah Carey', d: [90], g: ['pop', 'rnb'], l: 'en' },
+    { n: 'Rihanna', d: [2000, 2010], g: ['pop', 'rnb'], l: 'en' }, { n: 'Beyoncé', d: [2000, 2010], g: ['pop', 'rnb'], l: 'en' },
+    { n: 'Lady Gaga', d: [2000, 2010], g: ['pop', 'electro'], l: 'en' }, { n: 'Adele', d: [2010], g: ['pop'], l: 'en' },
+    { n: 'Ed Sheeran', d: [2010, 2020], g: ['pop'], l: 'en' }, { n: 'Dua Lipa', d: [2010, 2020], g: ['pop', 'electro'], l: 'en' },
+    { n: 'The Weeknd', d: [2010, 2020], g: ['pop', 'rnb'], l: 'en' }, { n: 'Bruno Mars', d: [2010], g: ['pop', 'funk'], l: 'en' },
+    { n: 'Amy Winehouse', d: [2000], g: ['pop', 'rnb'], l: 'en' }, { n: 'Kylie Minogue', d: [80, 2000], g: ['pop'], l: 'en' },
+    { n: 'Billie Eilish', d: [2010, 2020], g: ['pop'], l: 'en' }, { n: 'Taylor Swift', d: [2010, 2020], g: ['pop'], l: 'en' },
+    // ---- Variété / chanson française ----
+    { n: 'Johnny Hallyday', d: [60, 70, 80], g: ['variete', 'rock'], l: 'fr' },
+    { n: 'Michel Sardou', d: [70, 80], g: ['variete'], l: 'fr' }, { n: 'Claude François', d: [70], g: ['variete'], l: 'fr' },
+    { n: 'Serge Gainsbourg', d: [60, 70, 80], g: ['variete'], l: 'fr' }, { n: 'France Gall', d: [80], g: ['variete', 'pop'], l: 'fr' },
+    { n: 'Jean-Jacques Goldman', d: [80, 90], g: ['variete'], l: 'fr' }, { n: 'Daniel Balavoine', d: [80], g: ['variete'], l: 'fr' },
+    { n: 'Francis Cabrel', d: [80, 90], g: ['variete'], l: 'fr' }, { n: 'Patrick Bruel', d: [90], g: ['variete'], l: 'fr' },
+    { n: 'Céline Dion', d: [90, 2000], g: ['variete', 'pop'], l: 'fr' }, { n: 'Renaud', d: [80, 90], g: ['variete'], l: 'fr' },
+    { n: 'Alain Souchon', d: [80, 90], g: ['variete'], l: 'fr' }, { n: 'Julien Clerc', d: [70, 80], g: ['variete'], l: 'fr' },
+    { n: 'Véronique Sanson', d: [70, 80], g: ['variete'], l: 'fr' }, { n: 'Michel Berger', d: [80], g: ['variete'], l: 'fr' },
+    { n: 'Zaz', d: [2010], g: ['variete'], l: 'fr' }, { n: 'Louane', d: [2010, 2020], g: ['variete', 'pop'], l: 'fr' },
+    { n: 'Vianney', d: [2010, 2020], g: ['variete'], l: 'fr' }, { n: 'Christophe Maé', d: [2000, 2010], g: ['variete'], l: 'fr' },
+    { n: 'Calogero', d: [2000, 2010], g: ['variete'], l: 'fr' }, { n: 'Florent Pagny', d: [90, 2000], g: ['variete'], l: 'fr' },
+    { n: 'Patricia Kaas', d: [90], g: ['variete'], l: 'fr' }, { n: 'Mylène Farmer', d: [80, 90, 2000], g: ['variete', 'pop'], l: 'fr' },
+    { n: 'Stromae', d: [2010], g: ['variete', 'electro'], l: 'fr' }, { n: 'Angèle', d: [2010, 2020], g: ['pop', 'variete'], l: 'fr' },
+    // ---- Rap ----
+    { n: 'IAM', d: [90], g: ['rap'], l: 'fr' }, { n: 'NTM', d: [90], g: ['rap'], l: 'fr' },
+    { n: 'MC Solaar', d: [90], g: ['rap'], l: 'fr' }, { n: 'Sniper', d: [2000], g: ['rap'], l: 'fr' },
+    { n: 'Rohff', d: [2000], g: ['rap'], l: 'fr' }, { n: 'Diam\'s', d: [2000], g: ['rap'], l: 'fr' },
+    { n: 'Sexion d\'Assaut', d: [2000, 2010], g: ['rap'], l: 'fr' }, { n: 'Booba', d: [2000, 2010], g: ['rap'], l: 'fr' },
+    { n: 'Orelsan', d: [2010, 2020], g: ['rap'], l: 'fr' }, { n: 'Nekfeu', d: [2010], g: ['rap'], l: 'fr' },
+    { n: 'PNL', d: [2010], g: ['rap'], l: 'fr' }, { n: 'Damso', d: [2010, 2020], g: ['rap'], l: 'fr' },
+    { n: 'Bigflo & Oli', d: [2010, 2020], g: ['rap'], l: 'fr' }, { n: 'Soprano', d: [2000, 2010], g: ['rap'], l: 'fr' },
+    { n: 'Jul', d: [2010, 2020], g: ['rap'], l: 'fr' }, { n: 'Ninho', d: [2010, 2020], g: ['rap'], l: 'fr' },
+    { n: 'Gims', d: [2010, 2020], g: ['rap', 'pop'], l: 'fr' }, { n: 'Eminem', d: [2000], g: ['rap'], l: 'en' },
+    { n: 'Dr. Dre', d: [90, 2000], g: ['rap'], l: 'en' }, { n: '2Pac', d: [90], g: ['rap'], l: 'en' },
+    { n: 'Notorious B.I.G.', d: [90], g: ['rap'], l: 'en' }, { n: 'Snoop Dogg', d: [90, 2000], g: ['rap'], l: 'en' },
+    { n: 'Kanye West', d: [2000, 2010], g: ['rap'], l: 'en' }, { n: 'Drake', d: [2010, 2020], g: ['rap', 'rnb'], l: 'en' },
+    { n: 'Outkast', d: [2000], g: ['rap'], l: 'en' }, { n: 'Black Eyed Peas', d: [2000], g: ['rap', 'pop'], l: 'en' },
+    // ---- Électro / dance ----
+    { n: 'Daft Punk', d: [90, 2000, 2010], g: ['electro'], l: 'fr' }, { n: 'Justice', d: [2000], g: ['electro'], l: 'fr' },
+    { n: 'David Guetta', d: [2000, 2010], g: ['electro'], l: 'fr' }, { n: 'Bob Sinclar', d: [2000], g: ['electro'], l: 'fr' },
+    { n: 'Martin Solveig', d: [2000, 2010], g: ['electro'], l: 'fr' }, { n: 'Kungs', d: [2010, 2020], g: ['electro'], l: 'fr' },
+    { n: 'Ofenbach', d: [2010, 2020], g: ['electro'], l: 'fr' }, { n: 'Avicii', d: [2010], g: ['electro'], l: 'en' },
+    { n: 'Calvin Harris', d: [2010], g: ['electro'], l: 'en' }, { n: 'The Prodigy', d: [90], g: ['electro'], l: 'en' },
+    { n: 'Snap!', d: [90], g: ['electro', 'dance'], l: 'en' }, { n: '2 Unlimited', d: [90], g: ['electro', 'dance'], l: 'en' },
+    { n: 'Ace of Base', d: [90], g: ['pop', 'dance'], l: 'en' }, { n: 'Modjo', d: [2000], g: ['electro'], l: 'fr' },
+    // ---- Disco / funk / soul ----
+    { n: 'ABBA', d: [70], g: ['disco', 'pop'], l: 'en' }, { n: 'Bee Gees', d: [70], g: ['disco'], l: 'en' },
+    { n: 'Boney M.', d: [70], g: ['disco'], l: 'en' }, { n: 'Earth, Wind & Fire', d: [70], g: ['disco', 'funk'], l: 'en' },
+    { n: 'Stevie Wonder', d: [70, 80], g: ['funk', 'soul'], l: 'en' }, { n: 'James Brown', d: [60, 70], g: ['funk', 'soul'], l: 'en' },
+    { n: 'Chic', d: [70], g: ['disco', 'funk'], l: 'en' }, { n: 'Donna Summer', d: [70], g: ['disco'], l: 'en' },
+    { n: 'Aretha Franklin', d: [60, 70], g: ['soul'], l: 'en' }, { n: 'Marvin Gaye', d: [70], g: ['soul'], l: 'en' },
+    // ---- Reggae / latino / monde ----
+    { n: 'Bob Marley', d: [70, 80], g: ['reggae'], l: 'en' }, { n: 'Manu Chao', d: [90, 2000], g: ['reggae', 'monde'], l: 'int' },
+    { n: 'Shakira', d: [2000, 2010], g: ['pop', 'latino'], l: 'int' }, { n: 'Ricky Martin', d: [90, 2000], g: ['latino'], l: 'int' },
+    { n: 'Gipsy Kings', d: [80, 90], g: ['latino', 'monde'], l: 'int' }, { n: 'Magic System', d: [2000], g: ['monde'], l: 'fr' },
+    { n: 'Luis Fonsi', d: [2010], g: ['latino'], l: 'int' }, { n: 'Kaoma', d: [80, 90], g: ['latino'], l: 'int' },
+    // ---- Films / dessins animés ----
+    { n: 'Le Roi Lion', d: [90], g: ['film'], l: 'fr' }, { n: 'La Reine des Neiges', d: [2010], g: ['film'], l: 'fr' },
+    { n: 'Aladdin', d: [90], g: ['film'], l: 'fr' }, { n: 'La Belle et la Bête', d: [90], g: ['film'], l: 'fr' },
+    { n: 'Vaiana', d: [2010], g: ['film'], l: 'fr' }, { n: 'Titanic soundtrack', d: [90], g: ['film'], l: 'en' },
+    { n: 'Dirty Dancing', d: [80], g: ['film'], l: 'en' }, { n: 'Grease', d: [70], g: ['film'], l: 'en' },
+    { n: 'Hans Zimmer', d: [90, 2000, 2010], g: ['film'], l: 'int' }, { n: 'John Williams', d: [70, 80, 90], g: ['film'], l: 'int' }
+  ];
+
+  var DECADES = [{ v: 60, t: '60s' }, { v: 70, t: '70s' }, { v: 80, t: '80s' }, { v: 90, t: '90s' }, { v: 2000, t: '2000s' }, { v: 2010, t: '2010s' }, { v: 2020, t: '2020s' }];
+  var GENRES = [
+    { v: 'rock', t: '🎸 Rock' }, { v: 'pop', t: '🎤 Pop' }, { v: 'rap', t: '🎙️ Rap' },
+    { v: 'variete', t: '🇫🇷 Variété' }, { v: 'electro', t: '🎛️ Électro' }, { v: 'disco', t: '🕺 Disco' },
+    { v: 'funk', t: '🪩 Funk' }, { v: 'soul', t: '💜 Soul' }, { v: 'latino', t: '💃 Latino' },
+    { v: 'reggae', t: '🌴 Reggae' }, { v: 'metal', t: '🤘 Metal' }, { v: 'film', t: '🎬 Films' }
+  ];
+  var LANGS = [{ v: 'fr', t: '🇫🇷 Français' }, { v: 'en', t: '🌍 International' }];
+
+  /* Croise les critères choisis. Un critère vide = « peu importe ». */
+  function filterArtists(decs, gens, langs) {
+    return ARTISTS.filter(function (a) {
+      if (decs && decs.length && !a.d.some(function (d) { return decs.indexOf(d) >= 0; })) return false;
+      if (gens && gens.length && !a.g.some(function (g) { return gens.indexOf(g) >= 0; })) return false;
+      if (langs && langs.length) {
+        var ok = langs.indexOf(a.l) >= 0 || (langs.indexOf('en') >= 0 && a.l === 'int');
+        if (!ok) return false;
+      }
+      return true;
+    }).map(function (a) { return a.n; });
+  }
+
+  /* ---------------------------------------------------------------
      Sélecteur de morceau réutilisable (utilisé par le DJ sur SON
      téléphone). onPick(track) reçoit le morceau choisi.
      --------------------------------------------------------------- */
@@ -1360,14 +1476,31 @@
     appAudioMode = state.audioMode || 'device'; // qui produit le son sur cette partie
     var roundTrack = null; // morceau Deezer choisi pour la manche (local hôte, jamais diffusé)
     var autoPl = store.get('autoPlaylist', null); // playlist automatique active (id) ou null
+    var autoF = store.get('autoFilters', { d: [], g: [], l: [] }); // filtres combinés (décennie/genre/langue)
+    function fActive() { return (autoF.d.length + autoF.g.length + autoF.l.length) > 0; }
+    /* Liste d'artistes à utiliser : les filtres priment sur la playlist. */
+    function currentArtists() {
+      if (fActive()) return filterArtists(autoF.d, autoF.g, autoF.l);
+      var pl = autoPl ? playlistById(autoPl) : null;
+      return pl ? pl.artists : null;
+    }
+    function fSummary() {
+      var p = [];
+      if (autoF.d.length) p.push(autoF.d.map(function (d) { return d + 's'; }).join('/'));
+      if (autoF.g.length) p.push(autoF.g.map(function (g) { var x = GENRES.filter(function (o) { return o.v === g; })[0]; return x ? x.t.replace(/^\S+\s/, '') : g; }).join('/'));
+      if (autoF.l.length) p.push(autoF.l.map(function (l) { return l === 'fr' ? 'Français' : 'International'; }).join('/'));
+      return p.join(' · ');
+    }
     var playedIds = [];                            // morceaux déjà passés, pour ne pas les répéter
     var autoLoading = false;
 
     /* Précharge le morceau suivant de la playlist pour qu'il soit prêt
        dès que l'hôte lance la manche (la recherche Deezer est asynchrone). */
     function prefetchAuto() {
-      if (!autoPl || roundTrack || autoLoading) return;
-      var pl = playlistById(autoPl); if (!pl) return;
+      if (roundTrack || autoLoading) return;
+      var arts = currentArtists();
+      if (!arts || !arts.length) return;
+      var pl = { artists: arts };
       autoLoading = true;
       autoPick(pl, playedIds, function (t) {
         autoLoading = false;
@@ -2062,17 +2195,40 @@
             + (plays ? '📱 Musique jouée par l\'app' : '🔊 Son depuis une source à part') + ' · changer</button>'
           : '';
         // Playlist automatique : l'app enchaîne les morceaux toute seule.
+        var nbArts = (currentArtists() || []).length;
+        var chip = function (cls, val, txt, on) {
+          return '<button class="' + cls + ' shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ' + (on ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/75') + '" data-v="' + esc(String(val)) + '">' + txt + '</button>';
+        };
         dzBar += '<div class="glass rounded-2xl p-3 mb-3">'
-          + '<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">📻 Playlist auto</span>'
-          + (curPl ? '<button id="plOff" class="text-xs text-white/40 underline">désactiver</button>' : '') + '</div>'
-          + (curPl
-              ? '<div class="flex items-center gap-2"><span class="px-3 py-1.5 rounded-full bg-neon-violet text-white text-sm font-bold">' + curPl.icon + ' ' + esc(curPl.name) + '</span>'
-                + '<span class="text-white/40 text-xs flex-1">' + playedIds.length + ' morceau(x) joué(s)</span>'
-                + '<button id="plSkip" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
-              : '<div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
-                  return '<button class="plChip shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
-                }).join('') + '</div>')
-          + (curPl && s.phase === 'lobby' ? '<p class="text-white/40 text-xs mt-2">L\'app choisit le morceau suivant automatiquement — tu n\'as plus qu\'à lancer.</p>' : '')
+          + '<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">📻 Choix des morceaux</span>'
+          + ((curPl || fActive()) ? '<button id="plOff" class="text-xs text-white/40 underline">tout effacer</button>' : '') + '</div>'
+          + (fActive()
+              // Filtres combinés actifs : on affiche le résumé
+              ? '<div class="flex items-center gap-2 flex-wrap"><span class="px-3 py-1.5 rounded-full bg-neon-violet text-white text-sm font-bold">🎛️ ' + esc(fSummary()) + '</span>'
+                + '<span class="text-white/40 text-xs">' + nbArts + ' artistes · ' + playedIds.length + ' joué(s)</span>'
+                + '<button id="plSkip" class="ml-auto px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
+              : curPl
+                ? '<div class="flex items-center gap-2"><span class="px-3 py-1.5 rounded-full bg-neon-violet text-white text-sm font-bold">' + curPl.icon + ' ' + esc(curPl.name) + '</span>'
+                  + '<span class="text-white/40 text-xs flex-1">' + playedIds.length + ' morceau(x) joué(s)</span>'
+                  + '<button id="plSkip" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
+                : '<div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
+                    return '<button class="plChip shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
+                  }).join('') + '</div>')
+          // Filtres combinables : on croise époque, genre et langue.
+          + '<details class="mt-2"' + (fActive() ? ' open' : '') + '>'
+          + '<summary class="text-xs font-bold text-neon-cyan cursor-pointer">🎛️ Combiner époque · genre · langue</summary>'
+          + '<div class="mt-2 space-y-2">'
+          + '<div><div class="text-xs text-white/45 mb-1">Époque</div><div class="flex gap-2 overflow-x-auto pb-1">'
+          + DECADES.map(function (d) { return chip('fDec', d.v, d.t, autoF.d.indexOf(d.v) >= 0); }).join('') + '</div></div>'
+          + '<div><div class="text-xs text-white/45 mb-1">Genre</div><div class="flex gap-2 overflow-x-auto pb-1">'
+          + GENRES.map(function (g) { return chip('fGen', g.v, g.t, autoF.g.indexOf(g.v) >= 0); }).join('') + '</div></div>'
+          + '<div><div class="text-xs text-white/45 mb-1">Langue</div><div class="flex gap-2 overflow-x-auto pb-1">'
+          + LANGS.map(function (l) { return chip('fLang', l.v, l.t, autoF.l.indexOf(l.v) >= 0); }).join('') + '</div></div>'
+          + '<p class="text-xs ' + (fActive() && !nbArts ? 'text-rose-400' : 'text-white/40') + '">'
+          + (fActive()
+              ? (nbArts ? '<b>' + nbArts + ' artistes</b> correspondent à ce croisement.' : 'Aucun artiste ne correspond — retire un critère.')
+              : 'Exemple : <b>90s + Rock + Français</b> → Noir Désir, Indochine, Louise Attaque…')
+          + '</p></div></details>'
           + '</div>';
         // Entre deux manches, la playlist active tient en une ligne discrète.
         if (curPl && s.phase !== 'lobby') {
@@ -2431,10 +2587,30 @@
           toast('Playlist activée 📻', 'ok');
         };
       });
-      bind('#plOff', function () { autoPl = null; store.del('autoPlaylist'); renderHost(); });
+      bind('#plOff', function () {
+        autoPl = null; store.del('autoPlaylist');
+        autoF = { d: [], g: [], l: [] }; store.set('autoFilters', autoF);
+        renderHost();
+      });
       bind('#plSkip', function () { roundTrack = null; prefetchAuto(); renderHost(); });
+      // Filtres combinables : chaque étiquette s'ajoute ou se retire
+      var toggleF = function (arr, v) { var i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); };
+      var bindF = function (cls, key, cast) {
+        Array.prototype.forEach.call(document.querySelectorAll('.' + cls), function (b) {
+          b.onclick = function () {
+            toggleF(autoF[key], cast(b.getAttribute('data-v')));
+            store.set('autoFilters', autoF);
+            autoPl = null; store.del('autoPlaylist'); // les filtres remplacent la playlist
+            roundTrack = null; prefetchAuto();
+            renderHost();
+          };
+        });
+      };
+      bindF('fDec', 'd', function (v) { return parseInt(v, 10); });
+      bindF('fGen', 'g', function (v) { return v; });
+      bindF('fLang', 'l', function (v) { return v; });
       // Prépare le morceau suivant dès qu'on est en attente de lancement
-      if (autoPl && !roundTrack && prepPhase) prefetchAuto();
+      if ((autoPl || fActive()) && !roundTrack && prepPhase) prefetchAuto();
       if (roundTrack && canPlayInApp() && (!s.dj || s.dj.id === ME)) bindPlayer(roundTrack, renderHost);
       bind('#plyChange', function () { dzPause(); roundTrack = null; if (autoPl) prefetchAuto(); renderHost(); });
       bind('#plySearch', function () { dzPause(); openMusicPicker(); });

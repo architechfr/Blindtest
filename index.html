@@ -407,7 +407,7 @@
           return '<div class="dz-card mb-2">'
             + '<img src="' + esc((t.album && t.album.cover_small) || '') + '" alt="" />'
             + '<div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(t.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(t.artist ? t.artist.name : '') + '</div></div>'
-            + (platform().plays ? '<button class="tpPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">▶</button>' : '<button class="tpOpen px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">' + platform().icon + '↗</button>')
+            + (canPlayInApp() ? '<button class="tpPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">▶</button>' : '<button class="tpOpen px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">' + platform().icon + '↗</button>')
             + '<button class="tpPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">Choisir</button>'
             + '</div>';
         }).join('');
@@ -417,7 +417,7 @@
       el.innerHTML = [
         '<div class="set-panel p-5 animate-slidein">',
         '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">MON MORCEAU</h2><button id="tpClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
-        '  <p class="text-white/50 text-xs mb-2">' + (platform().plays
+        '  <p class="text-white/50 text-xs mb-2">' + (canPlayInApp()
              ? 'Choisis le titre : il sera joué depuis <b>ton téléphone</b> (branché sur l\'enceinte) et restera caché.'
              : 'Choisis le titre que tu vas lancer sur ' + esc(platform().name) + ' : il restera caché et servira à la révélation.') + '</p>',
         '  <div class="flex gap-2 mb-3"><input id="tpq" value="' + esc(initialQuery || '') + '" placeholder="Titre ou artiste…" class="flex-1 bg-black/40 rounded-xl px-4 py-3 outline-none focus:ring-2 ring-neon-cyan" /><button id="tpgo" class="px-4 rounded-xl bg-neon-cyan text-black font-extrabold">🔎</button></div>',
@@ -1577,20 +1577,20 @@
             return '<div class="dz-card mb-2">'
               + '<img src="' + esc(cover) + '" alt="" />'
               + '<div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(t.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(t.artist ? t.artist.name : '') + '</div></div>'
-              + (platform().plays
+              + (canPlayInApp()
                   ? '<button class="dzPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '" title="Pré-écouter">▶</button>'
                   : '<button class="dzOpen px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '" title="Ouvrir dans ' + esc(platform().name) + '">' + platform().icon + '↗</button>')
-              + '<button class="dzPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">' + (platform().plays ? 'Choisir' : 'Valider') + '</button>'
+              + '<button class="dzPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">' + (canPlayInApp() ? 'Choisir' : 'Valider') + '</button>'
               + '</div>';
           }).join('');
         } else if (results) list = '<p class="text-white/40 text-center py-6">Aucun résultat.</p>';
         pickerEl.innerHTML = [
           '<div class="set-panel p-5 animate-slidein">',
-          '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">' + (platform().plays ? 'CHOISIR UN MORCEAU' : 'QUEL EST CE TITRE ?') + '</h2><button id="dzClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
-          (platform().plays ? '' : '  <p class="text-white/50 text-xs mb-2">Cherche le titre que tu vas lancer sur ' + esc(platform().name) + ' : il restera caché et servira à la révélation + correction auto.</p>'),
+          '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">' + (canPlayInApp() ? 'CHOISIR UN MORCEAU' : 'QUEL EST CE TITRE ?') + '</h2><button id="dzClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+          (canPlayInApp() ? '' : '  <p class="text-white/50 text-xs mb-2">Cherche le titre que tu vas lancer sur ' + esc(platform().name) + ' : il restera caché et servira à la révélation + correction auto.</p>'),
           '  <div class="flex gap-2 mb-3"><input id="dzq" value="' + esc(q || '') + '" placeholder="Titre ou artiste…" class="flex-1 bg-black/40 rounded-xl px-4 py-3 outline-none focus:ring-2 ring-neon-cyan" /><button id="dzgo" class="px-4 rounded-xl bg-neon-cyan text-black font-extrabold">🔎</button></div>',
           '  <div id="dzlist" class="overflow-y-auto" style="max-height:55dvh">' + list + '</div>',
-          '  <p class="text-white/30 text-xs text-center mt-3">' + (platform().plays ? 'Extraits 30 s via Deezer · joués sur cet appareil' : 'Fiches via Deezer · l\'audio vient de ' + esc(platform().name)) + '</p>',
+          '  <p class="text-white/30 text-xs text-center mt-3">' + (canPlayInApp() ? 'Extraits 30 s intégrés · joués sur cet appareil · aucun compte requis' : 'L\'audio vient de ' + esc(platform().name) + ' · ceci sert à la révélation') + '</p>',
           '</div>'
         ].join('');
         pickerEl.classList.remove('hidden');
@@ -1806,8 +1806,10 @@
           + '</div>';
         dzBar += '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
           ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">' + (roundTrack.auto ? '📻 Choisi automatiquement (caché)' : '🔒 Réponse enregistrée (cachée)') + '</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
-          : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 ' + (plays ? 'Choisir un morceau (Deezer)' : 'Enregistrer la réponse du titre') + '</button>'
-            + (plays ? '' : '<p class="text-white/40 text-xs mt-2 text-center">Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.</p>')) + '</div>';
+          : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 ' + (plays ? 'Choisir un morceau' : 'Enregistrer la réponse du titre') + '</button>'
+            + '<p class="text-white/40 text-xs mt-2 text-center">' + (plays
+                ? 'Extraits fournis par l\'app — <b>aucun compte ni abonnement</b> requis.'
+                : 'Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.') + '</p>') + '</div>';
       }
       var dzCtrl = '';
       // Lecteur chez l'hôte s'il n'y a pas de DJ tournant OU si c'est lui le DJ.
@@ -2907,13 +2909,11 @@
       '    </div>',
       '  </div>',
 
-      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">🎵 Ma plateforme musicale</p>',
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">🎵 Mon service musical</p>',
+      '  <p class="text-white/45 text-xs mb-2">Utile <b>uniquement</b> si tu choisis « source à part » au démarrage : les liens ↗ ouvriront alors ce service. Si l\'app joue la musique, ce réglage ne sert à rien — <b>aucun abonnement n\'est requis</b>.</p>',
       '  <div class="grid grid-cols-3 gap-2">' + Object.keys(PLATFORMS).map(function (k) {
            return '<button class="platBtn py-2.5 rounded-xl text-xs font-bold ' + (prefs.platform === k ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '" data-plat="' + k + '">' + PLATFORMS[k].icon + ' ' + esc(PLATFORMS[k].name) + '</button>';
          }).join('') + '</div>',
-      '  <p class="text-white/40 text-xs mt-2 mb-1">' + (platform().plays
-           ? 'Deezer joue les extraits (30 s) directement dans l\'app.'
-           : 'Tu lances la musique depuis ' + esc(platform().name) + ' sur ton enceinte. Blind Test sert à enregistrer la réponse (pochette, titre, année) pour la révélation et la correction automatique.') + '</p>',
 
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Préférences</p>',
       '  <div class="glass rounded-2xl px-4">',

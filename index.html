@@ -489,14 +489,68 @@
   }
 
   var dzAudio = document.getElementById('dzaudio');
+  /* Mode audio de la partie : 'device' = l'app joue la musique sur le téléphone
+     du DJ ; 'external' = le son vient d'ailleurs (enceinte, autre appareil). */
+  var appAudioMode = 'device';
+  function canPlayInApp() { return appAudioMode === 'device'; }
+
   function dzPlay(url) {
-    // Si le DJ joue depuis Spotify/YT Music/etc., on ne lance surtout pas l'extrait
-    // Deezer par-dessus : la fiche du morceau sert seulement au reveal et à la correction.
-    if (!platform().plays) return;
+    // En mode "source à part", on ne lance jamais d'audio : le son vient d'ailleurs.
+    if (!canPlayInApp()) return;
     if (!dzAudio || !url) return;
     try { if (dzAudio.src !== url) dzAudio.src = url; dzAudio.currentTime = 0; dzAudio.play().catch(function () {}); } catch (e) {}
   }
   function dzResume() { if (dzAudio) dzAudio.play().catch(function () {}); }
+
+  /* ---------------------------------------------------------------
+     LECTEUR INTÉGRÉ — le DJ lance/arrête la musique sans jamais
+     sortir de l'application. `hidden` masque le titre (anti-spoil
+     si quelqu'un regarde par-dessus l'épaule).
+     --------------------------------------------------------------- */
+  function playerBar(track, opts) {
+    opts = opts || {};
+    if (!track) return '';
+    var playing = dzAudio && !dzAudio.paused && dzAudio.src === track.preview;
+    return '<div class="glass rounded-2xl p-3 mb-3">'
+      + '<div class="flex items-center gap-3">'
+      + '<img src="' + esc(track.cover || '') + '" class="w-12 h-12 rounded-lg object-cover shrink-0" alt="" />'
+      + '<div class="flex-1 min-w-0">'
+      + (opts.hidden
+          ? '<div class="text-xs text-neon-lime font-bold">🔒 Morceau caché</div><div class="font-bold text-sm text-white/35">••••••••••</div>'
+          : '<div class="font-bold truncate text-sm">' + esc(track.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(track.artist) + '</div>')
+      + '<div class="h-1.5 mt-1.5 rounded-full bg-white/10 overflow-hidden"><div id="plyBar" class="h-full rounded-full" style="width:0%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>'
+      + '</div>'
+      + '<button id="plyToggle" class="w-14 h-14 rounded-full shrink-0 text-2xl font-extrabold flex items-center justify-center ' + (playing ? 'bg-white/15' : 'bg-gradient-to-br from-neon-lime to-neon-cyan text-black') + '">' + (playing ? '⏸' : '▶') + '</button>'
+      + '</div>'
+      + '<div class="flex items-center gap-2 mt-2">'
+      + '<button id="plyRestart" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↺ Reprendre au début</button>'
+      + '<span id="plyTime" class="text-white/40 text-xs tabular-nums">0:00</span>'
+      + '<span class="text-white/40 text-xs ml-auto">🔊</span>'
+      + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="w-24" />'
+      + '</div></div>';
+  }
+  /* Branche les commandes du lecteur + la progression (événement natif, léger). */
+  function bindPlayer(track, onChange) {
+    if (!track) return;
+    bind('#plyToggle', function () {
+      if (!dzAudio) return;
+      if (!dzAudio.paused && dzAudio.src === track.preview) dzPause();
+      else if (dzAudio.src === track.preview && dzAudio.currentTime > 0) dzResume();
+      else dzPlay(track.preview);
+      if (onChange) setTimeout(onChange, 60);
+    });
+    bind('#plyRestart', function () { dzPlay(track.preview); if (onChange) setTimeout(onChange, 60); });
+    var v = $('#plyVol'); if (v) v.oninput = function () { if (dzAudio) dzAudio.volume = parseFloat(v.value); };
+    if (dzAudio) {
+      dzAudio.ontimeupdate = function () {
+        var bar = document.getElementById('plyBar'), tm = document.getElementById('plyTime');
+        if (!bar || !dzAudio.duration) return;
+        bar.style.width = Math.min(100, (dzAudio.currentTime / dzAudio.duration) * 100) + '%';
+        if (tm) { var s = Math.floor(dzAudio.currentTime); tm.textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+      };
+      dzAudio.onended = function () { if (onChange) onChange(); };
+    }
+  }
   function dzPause() { if (dzAudio) try { dzAudio.pause(); } catch (e) {} }
 
   /* Comparaison floue réponse <-> morceau (pour la suggestion ✓/✗). */
@@ -843,6 +897,17 @@
       '  <input id="partyName" maxlength="30" placeholder="Samedi déglingo"',
       '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
 
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔈 D\'où sort la musique ?</p>',
+      '  <div class="grid grid-cols-1 gap-2 mb-2">',
+      '    <button type="button" class="suAudio p-3 rounded-xl text-left bg-neon-violet text-white" data-audio="device">',
+      '      <div class="font-extrabold">📱 Le téléphone du DJ</div>',
+      '      <div class="text-xs opacity-80">L\'app joue la musique elle-même. Celui qui est DJ lance les extraits <b>sans jamais quitter le jeu</b>. Idéal sans enceinte connectée.</div></button>',
+      '    <button type="button" class="suAudio p-3 rounded-xl text-left bg-black/30 text-white/70" data-audio="external">',
+      '      <div class="font-extrabold">🔊 Une source à part</div>',
+      '      <div class="text-xs opacity-80">Enceinte, chaîne hi-fi, autre téléphone, vinyle… L\'app ne gère que le jeu. Aucun service musical requis.</div></button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5">Tu pourras changer en cours de partie.</p>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Mode de jeu de départ</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-mode="classic">🔊 Classique</button>',
@@ -927,7 +992,14 @@
 
     $('#back').onclick = function () { location.hash = ''; };
 
-    var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none';
+    var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
+    Array.prototype.forEach.call(document.querySelectorAll('.suAudio'), function (b) {
+      b.onclick = function () {
+        setupAudio = b.getAttribute('data-audio');
+        Array.prototype.forEach.call(document.querySelectorAll('.suAudio'), function (x) { x.className = x.className.replace('bg-neon-violet text-white', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
+      };
+    });
     var setupCombos = 1, setupJokers = 1, setupWheel = 0;
     (function () {
       var wb = document.getElementById('suWheel');
@@ -1011,7 +1083,7 @@
       st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
       st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
       st.turboSecs = Math.min(120, Math.max(10, parseInt(($('#turboSecs') || {}).value, 10) || 30));
-      st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel;
+      st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
       st.goal = setupGoal;
       st.goalVal = Math.max(1, parseInt(($('#goalVal') || {}).value, 10) || (setupGoal === 'score' ? 50 : 20));
       st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
@@ -1031,7 +1103,7 @@
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
-      wheel: 0, challenge: null, mult: 1,
+      wheel: 0, challenge: null, mult: 1, audioMode: 'device',
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -1044,6 +1116,7 @@
     var code = state.code;
     store.set('hostGame', state);
     keepAwake();
+    appAudioMode = state.audioMode || 'device'; // qui produit le son sur cette partie
     var roundTrack = null; // morceau Deezer choisi pour la manche (local hôte, jamais diffusé)
     var autoPl = store.get('autoPlaylist', null); // playlist automatique active (id) ou null
     var playedIds = [];                            // morceaux déjà passés, pour ne pas les répéter
@@ -1709,10 +1782,13 @@
       var prepPhase = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal' || s.phase === 'turbo_reveal');
       var dzBar = '';
       if (deezerOn && prepPhase) {
-        var plays = platform().plays;
+        var plays = canPlayInApp();
         var curPl = autoPl ? playlistById(autoPl) : null;
+        // D'où sort la musique (modifiable en pleine partie)
+        dzBar = '<button id="audioToggle" class="w-full py-2.5 rounded-xl text-sm font-bold mb-3 ' + (plays ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">'
+          + (plays ? '📱 Musique jouée par l\'app' : '🔊 Son depuis une source à part') + ' · changer</button>';
         // Playlist automatique : l'app enchaîne les morceaux toute seule.
-        dzBar = '<div class="glass rounded-2xl p-3 mb-3">'
+        dzBar += '<div class="glass rounded-2xl p-3 mb-3">'
           + '<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">📻 Playlist auto</span>'
           + (curPl ? '<button id="plOff" class="text-xs text-white/40 underline">désactiver</button>' : '') + '</div>'
           + (curPl
@@ -1730,7 +1806,10 @@
             + (plays ? '' : '<p class="text-white/40 text-xs mt-2 text-center">Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.</p>')) + '</div>';
       }
       var dzCtrl = '';
-      if (deezerOn && platform().plays && roundTrack && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess' || s.phase === 'racing' || s.phase === 'grading')) {
+      if (roundTrack && canPlayInApp() && !s.dj && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess' || s.phase === 'racing' || s.phase === 'grading')) {
+        // Lecteur intégré : l'hôte joue la musique sans quitter l'appli.
+        dzCtrl = playerBar(roundTrack, { hidden: false });
+      } else if (false) {
         dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
           + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'
           + '<button id="dzReplay" class="px-3 py-2 rounded-lg glass text-sm">🔁 Rejouer</button>'
@@ -2052,9 +2131,14 @@
       bind('#plSkip', function () { roundTrack = null; prefetchAuto(); renderHost(); });
       // Prépare le morceau suivant dès qu'on est en attente de lancement
       if (autoPl && !roundTrack && prepPhase) prefetchAuto();
-      bind('#dzToggle', function () { if (dzAudio && dzAudio.paused) dzResume(); else dzPause(); });
-      bind('#dzReplay', function () { if (roundTrack) dzPlay(roundTrack.preview); });
-      var dv = $('#dzvol'); if (dv) dv.oninput = function () { if (dzAudio) dzAudio.volume = parseFloat(dv.value); };
+      if (roundTrack && canPlayInApp() && !s.dj) bindPlayer(roundTrack, renderHost);
+      bind('#audioToggle', function () {
+        s.audioMode = (s.audioMode || 'device') === 'device' ? 'external' : 'device';
+        appAudioMode = s.audioMode;
+        if (s.audioMode === 'external') dzPause();
+        publish();
+        toast(s.audioMode === 'device' ? 'Musique jouée par l\'app 📱' : 'Son depuis une source à part 🔊', 'ok');
+      });
       Array.prototype.forEach.call(document.querySelectorAll('.modeChip'), function (b) { b.onclick = function () { s.mode = b.getAttribute('data-mode'); publish(); }; });
       Array.prototype.forEach.call(document.querySelectorAll('.teamChip'), function (b) { b.onclick = function () { s.teams = parseInt(b.getAttribute('data-teams'), 10) || 0; reassignTeams(); publish(); }; });
       Array.prototype.forEach.call(document.querySelectorAll('.themeChip'), function (b) { b.onclick = function () { s.theme = b.getAttribute('data-theme'); publish(); }; });
@@ -2114,6 +2198,7 @@
         if (st.phase === 'voting' && lastPhase !== 'voting') voted = false;
         if (st.phase === 'year_guess' && lastPhase !== 'year_guess') guessed = false;
         if (st.phase === 'buzzing' && lastPhase !== 'buzzing') answered = false;
+        appAudioMode = st.audioMode || 'device'; // qui produit le son sur cette partie
         if (st.phase === 'racing' && lastPhase !== 'racing') { raceMine = null; raceCount = 0; }
         // Partie terminée → on l'archive et on cesse de proposer d'y revenir.
         if (st.phase === 'ended' && lastPhase !== 'ended') archiveGame(st, code, name);
@@ -2188,20 +2273,18 @@
       if (imDJ && s.phase !== 'lobby' && s.phase !== 'ended') {
         var djHdr = '<div class="text-center mb-3"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' de ta série</p></div>';
         // Sélection du morceau par le DJ, sur son propre téléphone.
-        var djTrackBox = '<div class="glass rounded-2xl p-3 mb-4">'
-          + (myTrack
-              ? '<div class="flex items-center gap-3"><img src="' + esc(myTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" />'
-                + '<div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">🔒 Ton morceau (caché)</div>'
-                + '<div class="font-bold truncate text-sm">' + esc(myTrack.title) + '</div>'
-                + '<div class="text-white/50 text-xs truncate">' + esc(myTrack.artist) + '</div></div>'
-                + '<button id="djPickTrack" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
-                + (platform().plays
-                    ? '<div class="grid grid-cols-2 gap-2 mt-2"><button id="djPlay" class="py-2.5 rounded-lg bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold text-sm">▶ Jouer sur l\'enceinte</button>'
-                      + '<button id="djStop" class="py-2.5 rounded-lg glass font-bold text-sm">⏸ Pause</button></div>'
-                    : '<p class="text-white/40 text-xs mt-2">Lance-le depuis ' + esc(platform().name) + ' sur l\'enceinte.</p>')
-              : '<button id="djPickTrack" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🎵 Choisir mon morceau</button>'
-                + '<p class="text-white/40 text-xs mt-2 text-center">Cherche un titre ou pioche dans une playlist. Il restera caché.</p>')
-          + '</div>';
+        var inApp = (s.audioMode || 'device') === 'device';
+        var djTrackBox = myTrack
+          ? (inApp ? playerBar(myTrack, { hidden: false }) : '')
+            + '<div class="glass rounded-2xl p-3 mb-3 flex items-center gap-2">'
+              + (inApp ? '' : '<img src="' + esc(myTrack.cover) + '" class="w-10 h-10 rounded-lg object-cover shrink-0" alt="" /><div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(myTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(myTrack.artist) + '</div></div>')
+              + (inApp ? '<span class="text-white/45 text-xs flex-1">🔊 La musique sort de <b>ton</b> téléphone</span>' : '')
+              + '<button id="djPickTrack" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
+          : '<div class="glass rounded-2xl p-3 mb-3">'
+              + '<button id="djPickTrack" class="w-full py-3.5 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🎵 Choisir mon morceau</button>'
+              + '<p class="text-white/40 text-xs mt-2 text-center">' + (inApp
+                  ? 'Il sera joué <b>depuis cette appli</b>, sur ton téléphone. Tu ne quittes jamais le jeu.'
+                  : 'Il restera caché et servira à la révélation. Lance le son depuis ta source.') + '</p></div>';
         if (s.phase === 'racing') {
           var gotD = Math.max(raceCount, Object.keys(s.answers || {}).length);
           center = '<div class="w-full animate-slidein">' + djHdr + djTrackBox
@@ -2409,8 +2492,7 @@
           toast('Morceau prêt 🔒', 'ok'); renderPlayer();
         }, lastState && lastState.theme ? lastState.theme : '');
       });
-      bind('#djPlay', function () { if (myTrack) dzPlay(myTrack.preview); });
-      bind('#djStop', dzPause);
+      if (myTrack && (lastState.audioMode || 'device') === 'device') bindPlayer(myTrack, renderPlayer);
 
       // Au verdict, on joint la fiche du morceau : elle n'a circulé qu'à cet instant.
       var myReveal = function () { return myTrack ? { title: myTrack.title, artist: myTrack.artist, cover: myTrack.cover, year: myTrack.year } : null; };

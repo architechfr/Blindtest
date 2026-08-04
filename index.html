@@ -612,18 +612,65 @@
 
   /* Comparaison floue réponse <-> morceau (pour la suggestion ✓/✗). */
   function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)/g, ' ').replace(/feat.*$/, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  /* Nettoyage poussé : retire les mentions d'édition qui ne font pas partie du
+     titre réel (Remastered, Live, Radio Edit…) et les articles peu porteurs. */
+  var NOISE = /\b(remaster(ed)?|remasterise\w*|version|edit|radio|single|album|mono|stereo|live|deluxe|bonus|track|feat|ft|featuring|avec|original|motion|picture|soundtrack|bande|originale|extended|mix|remix)\b/g;
+  var STOP = { le: 1, la: 1, les: 1, un: 1, une: 1, des: 1, du: 1, de: 1, d: 1, l: 1, the: 1, a: 1, an: 1, of: 1, and: 1, et: 1, on: 1, in: 1, to: 1, my: 1, me: 1, i: 1, you: 1 };
+  function clean(s) { return norm(s).replace(NOISE, ' ').replace(/\s+/g, ' ').trim(); }
+  function words(s) { return clean(s).split(' ').filter(function (w) { return w && !STOP[w]; }); }
+
+  /* Distance de Levenshtein → tolère les fautes de frappe et l'orthographe approximative. */
+  function lev(a, b) {
+    if (a === b) return 0;
+    if (!a.length || !b.length) return Math.max(a.length, b.length);
+    if (Math.abs(a.length - b.length) > 6) return 99;
+    var prev = [], cur = [], i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur[0] = i;
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1));
+      }
+      prev = cur.slice();
+    }
+    return prev[b.length];
+  }
+  function simil(a, b) { var m = Math.max(a.length, b.length); return m ? 1 - lev(a, b) / m : 0; }
+  /* Deux mots se ressemblent-ils ? (tolérance proportionnelle à la longueur) */
+  function wordAlike(x, y) {
+    if (x === y) return true;
+    if (x.length >= 4 && y.length >= 4 && (x.indexOf(y) === 0 || y.indexOf(x) === 0)) return true; // préfixe commun
+    var tol = x.length <= 4 ? 1 : (x.length <= 7 ? 2 : 3);
+    return lev(x, y) <= tol;
+  }
+
   function fuzzyHit(answer, track, mode) {
     if (!track) return null;
-    var a = norm(answer); if (!a) return null;
-    var title = norm(track.title), artist = norm(track.artist);
-    function inc(h, n) { return n && n.length > 1 && h.indexOf(n) >= 0; }
+    var a = clean(answer); if (!a) return null;
+    var title = clean(track.title), artist = clean(track.artist);
+
     function match(field) {
-      if (!field) return false;
-      if (inc(a, field) || inc(field, a)) return true;
-      var aw = a.split(' ').filter(function (w) { return w.length > 2; });
-      var fw = field.split(' ');
-      return aw.filter(function (w) { return fw.indexOf(w) >= 0; }).length >= 1;
+      if (!field || !a) return false;
+      // 1. Quasi-identique (tolère les fautes) : « bohemian rapsodie » ≈ « bohemian rhapsody »
+      if (simil(a, field) >= 0.80) return true;
+      // 2. La réponse est contenue dans le champ (ou l'inverse), sur une longueur significative
+      var shortest = Math.min(a.length, field.length);
+      if (shortest >= 4 && (field.indexOf(a) >= 0 || a.indexOf(field) >= 0)) return true;
+      // 3. Comparaison mot à mot : il faut retrouver l'ESSENTIEL des mots porteurs,
+      //    pas un seul mot en commun (« Take On Me » ne doit pas valider « Take That »).
+      var aw = words(a), fw = words(field);
+      if (!aw.length || !fw.length) return false;
+      var hits = aw.filter(function (w) {
+        return fw.some(function (f) { return wordAlike(w, f); });
+      }).length;
+      var need = Math.max(1, Math.ceil(fw.length * 0.6));   // 60 % des mots du vrai titre
+      // Il faut aussi que l'essentiel de CE QUI A ÉTÉ TAPÉ corresponde : sinon
+      // « take that » validerait « Take On Me » sur le seul mot « take ».
+      if (hits < need || hits < Math.ceil(aw.length * 0.7)) return false;
+      // Garde-fou final : l'ensemble doit rester globalement proche.
+      return simil(a, field) >= 0.55;
     }
+
     var mt = match(title), ma = match(artist);
     if (mode === 'title') return mt ? 'ok' : 'ko';
     if (mode === 'artist') return ma ? 'ok' : 'ko';
@@ -1004,6 +1051,8 @@
       '  </div>',
       '  <p class="text-white/40 text-xs mb-5"><b>Combos</b> : bonnes réponses d\'affilée = bonus croissant (+1, +2, +3). <b>Jokers</b> : chaque joueur reçoit 1 × « ×2 » (double ses points) et 1 × « 🛡️ bouclier » (annule un malus), à jouer quand il veut.</p>',
 
+      '  <button type="button" id="suBlindFinal" class="w-full py-3 rounded-xl text-sm font-bold bg-black/30 text-white/60 mb-2">🕶️ Finale à l\'aveugle : OFF</button>',
+      '  <p class="text-white/40 text-xs mb-5">À la fin de chaque série, une manche <b>sans DJ</b> : l\'app choisit le morceau, le joue et corrige. Le DJ sortant joue enfin lui aussi — tout le monde à égalité.</p>',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🏁 Fin de partie</p>',
       '  <div class="grid grid-cols-3 gap-2 mb-2">',
       '    <button type="button" class="suGoal py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-goal="none">Libre</button>',
@@ -1068,7 +1117,15 @@
     $('#back').onclick = function () { location.hash = ''; };
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
-    var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10;
+    var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10, setupBlindFinal = 0;
+    (function () {
+      var fb = document.getElementById('suBlindFinal');
+      if (fb) fb.onclick = function () {
+        setupBlindFinal = setupBlindFinal ? 0 : 1;
+        fb.className = 'w-full py-3 rounded-xl text-sm font-bold mb-2 ' + (setupBlindFinal ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/60');
+        fb.textContent = '🕶️ Finale à l\'aveugle : ' + (setupBlindFinal ? 'ON' : 'OFF');
+      };
+    })();
     (function () {
       var bb = document.getElementById('suBlind');
       var refreshPl = function () {
@@ -1182,6 +1239,7 @@
         st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
         st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
+        st.blindFinal = setupBlindFinal;
         st.goal = setupGoal;
         st.goalVal = Math.max(1, val('#goalVal', setupGoal === 'score' ? 50 : 20));
         st.fredEvery = Math.max(1, val('#fredEvery', 10));
@@ -1223,6 +1281,7 @@
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
       wheel: 0, challenge: null, mult: 1, audioMode: 'device', blind: 0,
+      blindFinal: 0, blindRound: 0,
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -1442,7 +1501,20 @@
       } else { state.challenge = null; state.mult = 1; }
       /* Rotation du DJ : tous les N titres, un joueur différent prend les commandes.
          Le DJ choisit le morceau → il connaît la réponse → il ne marque pas ce tour-ci. */
-      if (state.djRotate) {
+      /* FINALE À L'AVEUGLE : à la fin de chaque série de DJ, une manche où
+         personne n'est aux commandes — l'app choisit, joue et corrige, et le
+         DJ sortant joue enfin lui aussi. */
+      state.blindRound = 0;
+      if (state.djRotate && state.blindFinal && state.djCount > 0
+          && (state.djCount % (state.djEvery || 5) === 0)
+          && state._lastBlind !== state.djCount) {   // une seule fois par série
+        state.blindRound = 1;
+        state.dj = null;              // aucun DJ sur cette manche
+        state.mode = 'turbo';         // tout le monde répond
+        state.source = null;
+        state._lastBlind = state.djCount; // ne consomme AUCUN titre du cycle
+      }
+      if (state.djRotate && !state.blindRound) {
         var dids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
         if (dids.length) {
           var dEvery = state.djEvery || 5;
@@ -1451,7 +1523,10 @@
           state.dj = { id: did, name: state.players[did].name };
           state.djCount = (state.djCount || 0) + 1;
         }
-      } else { state.dj = null; }
+      } else if (!state.djRotate) { state.dj = null; }
+
+      // La finale à l'aveugle a besoin d'un morceau choisi par l'app.
+      if (state.blindRound && autoPl && !roundTrack) prefetchAuto();
 
       if (state.mode === 'fredonne') {
         var ids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
@@ -1613,7 +1688,7 @@
       });
       // Partie à l'aveugle : personne ne connaît la réponse, donc personne ne
       // corrige — l'app tranche seule et enchaîne directement sur les résultats.
-      if (state.blind) { applyTurbo(); return; }
+      if (state.blind || state.blindRound) { applyTurbo(); return; }
       state.phase = 'grading';
       publish();
     }
@@ -2183,6 +2258,9 @@
         '    </div>',
         '  </div>',
         (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
+        (s.blindRound ? '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(255,46,154,.6)">'
+          + '<div class="text-2xl">🕶️</div><p class="bt-title font-extrabold text-neon-pink">FINALE À L\'AVEUGLE</p>'
+          + '<p class="text-white/55 text-sm">Pas de DJ : tout le monde joue, l\'app corrige.</p></div>' : ''),
         // Défi tiré par la roue (mis en avant, il change les règles de la manche)
         (s.wheel && s.challenge && s.phase !== 'lobby' && s.phase !== 'ended'
           ? '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(255,46,154,.55)">'
@@ -2617,6 +2695,9 @@
         '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
         (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
+        (s.blindRound && s.phase !== 'ended'
+          ? '  <div class="text-center mt-2 mb-1 animate-slidein"><span class="inline-block px-4 py-1.5 rounded-2xl bg-neon-pink/25 ring-1 ring-neon-pink font-extrabold">🕶️ Finale à l\'aveugle — personne ne connaît la réponse</span></div>'
+          : ''),
         (s.wheel && s.challenge && s.phase !== 'ended'
           ? '  <div class="text-center mt-2 mb-1 animate-slidein"><div class="inline-block px-4 py-1.5 rounded-2xl bg-neon-pink/20 ring-1 ring-neon-pink">'
             + '<span class="font-extrabold">' + s.challenge.icon + ' ' + esc(s.challenge.name) + '</span>'

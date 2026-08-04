@@ -1780,8 +1780,12 @@
       // Lecteur Deezer (modes à enceinte uniquement)
       var deezerOn = prefs.deezer && (s.mode === 'classic' || s.mode === 'year' || s.mode === 'turbo');
       var prepPhase = (s.phase === 'lobby' || s.phase === 'reveal' || s.phase === 'year_reveal' || s.phase === 'turbo_reveal');
+      // Si la manche est lancée sans morceau choisi, on DOIT pouvoir en choisir un
+      // en cours de route — sinon l'hôte se retrouve bloqué sans rien à jouer.
+      var missingTrack = canPlayInApp() && !roundTrack && s.phase !== 'ended';
+      var showTrackUI = prepPhase || missingTrack;
       var dzBar = '';
-      if (deezerOn && prepPhase) {
+      if (deezerOn && showTrackUI) {
         var plays = canPlayInApp();
         var curPl = autoPl ? playlistById(autoPl) : null;
         // D'où sort la musique (modifiable en pleine partie)
@@ -1806,7 +1810,9 @@
             + (plays ? '' : '<p class="text-white/40 text-xs mt-2 text-center">Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.</p>')) + '</div>';
       }
       var dzCtrl = '';
-      if (roundTrack && canPlayInApp() && !s.dj && (s.phase === 'buzzing' || s.phase === 'armed' || s.phase === 'answering' || s.phase === 'voting' || s.phase === 'year_guess' || s.phase === 'racing' || s.phase === 'grading')) {
+      // Lecteur chez l'hôte s'il n'y a pas de DJ tournant OU si c'est lui le DJ.
+      var hostPlays = !s.dj || s.dj.id === ME;
+      if (roundTrack && canPlayInApp() && hostPlays && s.phase !== 'lobby' && s.phase !== 'ended') {
         // Lecteur intégré : l'hôte joue la musique sans quitter l'appli.
         dzCtrl = playerBar(roundTrack, { hidden: false });
       } else if (false) {
@@ -2068,7 +2074,10 @@
              renderLeaderboard(lb, present, null, fairArg),
              (fairArg ? '<p class="text-white/45 text-xs mt-3 text-center">⚖️ Classement <b>équitable</b> : les scores sont ramenés au même nombre de titres jouables (chacun n\'a pas été DJ le même nombre de fois).</p>' : ''),
         '  </div>',
-        '  <button id="quit" class="mt-4 text-white/40 text-sm">Quitter la partie</button>',
+        // Sortie de secours : toujours accessible, quelle que soit la phase.
+        (s.phase !== 'lobby' && s.phase !== 'ended'
+          ? '  <button id="abortRound" class="mt-4 w-full py-2.5 rounded-xl glass text-white/60 font-bold text-sm">⏭️ Annuler cette manche</button>' : ''),
+        '  <button id="quit" class="mt-3 text-white/40 text-sm">Quitter la partie</button>',
         '</div>'
       ].join('');
 
@@ -2077,7 +2086,14 @@
         QRCode.toCanvas($('#qr'), joinUrl, { width: 180, margin: 1, color: { dark: '#0b0014', light: '#ffffff' } }, function () {});
         var copy = $('#copyLink');
         if (copy) copy.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(joinUrl); toast('Lien copié !', 'ok'); };
-        var l = $('#launch'); if (l) l.onclick = function () { if (Object.keys(s.players).length) launchRound(); else toast('Aucun joueur connecté', 'err'); };
+        var l = $('#launch'); if (l) l.onclick = function () {
+          if (!Object.keys(s.players).length) { toast('Aucun joueur connecté', 'err'); return; }
+          // L'app doit jouer le son mais aucun morceau n'est prêt → on prévient au lieu de bloquer.
+          if (canPlayInApp() && !roundTrack && !s.dj) {
+            if (!confirm('Aucun morceau sélectionné.\n\nL\'app est réglée pour jouer la musique elle-même : choisis un morceau (ou une playlist auto) avant de lancer.\n\nLancer quand même ?')) return;
+          }
+          launchRound();
+        };
       }
       bind('#forceVote', function () { if (s.buzzOpenAt) s.buzzMs = Date.now() - s.buzzOpenAt; s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; s.voteAt = Date.now(); publish(); });
       bind('#ok', function () { validate(true); });
@@ -2131,7 +2147,7 @@
       bind('#plSkip', function () { roundTrack = null; prefetchAuto(); renderHost(); });
       // Prépare le morceau suivant dès qu'on est en attente de lancement
       if (autoPl && !roundTrack && prepPhase) prefetchAuto();
-      if (roundTrack && canPlayInApp() && !s.dj) bindPlayer(roundTrack, renderHost);
+      if (roundTrack && canPlayInApp() && (!s.dj || s.dj.id === ME)) bindPlayer(roundTrack, renderHost);
       bind('#audioToggle', function () {
         s.audioMode = (s.audioMode || 'device') === 'device' ? 'external' : 'device';
         appAudioMode = s.audioMode;
@@ -2144,6 +2160,13 @@
       Array.prototype.forEach.call(document.querySelectorAll('.themeChip'), function (b) { b.onclick = function () { s.theme = b.getAttribute('data-theme'); publish(); }; });
       var tf = $('#themeFree'); if (tf) tf.onchange = function () { s.theme = tf.value.trim(); publish(); };
       bind('#themeClear', function () { s.theme = ''; publish(); });
+      bind('#abortRound', function () {
+        // Retour au salon sans perdre les scores : débloque toute situation.
+        dzPause();
+        state.round = Math.max(0, state.round - 1);
+        resetRound(); state.phase = 'lobby';
+        publish(); toast('Manche annulée — tu peux relancer', 'info');
+      });
       bind('#quit', function () { if (confirm('Quitter et supprimer la partie ?')) { store.del('hostGame'); teardown(); location.hash = ''; } });
     }
 

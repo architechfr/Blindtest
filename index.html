@@ -507,26 +507,31 @@
      sortir de l'application. `hidden` masque le titre (anti-spoil
      si quelqu'un regarde par-dessus l'épaule).
      --------------------------------------------------------------- */
+  var trackPeek = false; // le DJ a demandé à voir le titre (bouton œil)
   function playerBar(track, opts) {
     opts = opts || {};
     if (!track) return '';
     var playing = dzAudio && !dzAudio.paused && dzAudio.src === track.preview;
+    var show = !opts.hidden || trackPeek; // masqué par défaut : l'écran est souvent visible de tous
     return '<div class="glass rounded-2xl p-3 mb-3">'
       + '<div class="flex items-center gap-3">'
-      + '<img src="' + esc(track.cover || '') + '" class="w-12 h-12 rounded-lg object-cover shrink-0" alt="" />'
+      + (show
+          ? '<img src="' + esc(track.cover || '') + '" class="w-12 h-12 rounded-lg object-cover shrink-0" alt="" />'
+          : '<div class="w-12 h-12 rounded-lg shrink-0 bg-black/40 flex items-center justify-center text-xl">🔒</div>')
       + '<div class="flex-1 min-w-0">'
-      + (opts.hidden
-          ? '<div class="text-xs text-neon-lime font-bold">🔒 Morceau caché</div><div class="font-bold text-sm text-white/35">••••••••••</div>'
-          : '<div class="font-bold truncate text-sm">' + esc(track.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(track.artist) + '</div>')
+      + (show
+          ? '<div class="font-bold truncate text-sm">' + esc(track.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(track.artist) + '</div>'
+          : '<div class="text-xs text-neon-lime font-bold">Morceau prêt · caché</div><div class="font-bold text-sm text-white/30 tracking-widest">••••••••</div>')
       + '<div class="h-1.5 mt-1.5 rounded-full bg-white/10 overflow-hidden"><div id="plyBar" class="h-full rounded-full" style="width:0%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>'
       + '</div>'
       + '<button id="plyToggle" class="w-14 h-14 rounded-full shrink-0 text-2xl font-extrabold flex items-center justify-center ' + (playing ? 'bg-white/15' : 'bg-gradient-to-br from-neon-lime to-neon-cyan text-black') + '">' + (playing ? '⏸' : '▶') + '</button>'
       + '</div>'
       + '<div class="flex items-center gap-2 mt-2">'
-      + '<button id="plyRestart" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↺ Reprendre au début</button>'
+      + '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">↺</button>'
+      + (opts.hidden ? '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">' + (trackPeek ? '🙈 cacher' : '👁 voir') + '</button>' : '')
+      + (opts.onChange ? '<button id="plyChange" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">🔄 autre</button>' : '')
       + '<span id="plyTime" class="text-white/40 text-xs tabular-nums">0:00</span>'
-      + '<span class="text-white/40 text-xs ml-auto">🔊</span>'
-      + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="w-24" />'
+      + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1 min-w-0 ml-1" />'
       + '</div></div>';
   }
   /* Branche les commandes du lecteur + la progression (événement natif, léger). */
@@ -540,6 +545,7 @@
       if (onChange) setTimeout(onChange, 60);
     });
     bind('#plyRestart', function () { dzPlay(track.preview); if (onChange) setTimeout(onChange, 60); });
+    bind('#plyPeek', function () { trackPeek = !trackPeek; if (onChange) onChange(); });
     var v = $('#plyVol'); if (v) v.oninput = function () { if (dzAudio) dzAudio.volume = parseFloat(v.value); };
     if (dzAudio) {
       dzAudio.ontimeupdate = function () {
@@ -1310,6 +1316,7 @@
 
     /* Actions hôte (machine à états) */
     function resetRound() {
+      trackPeek = false; // le titre redevient masque
       state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
       state.reveal = null; state.suggest = null;
       state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
@@ -1805,8 +1812,11 @@
         var plays = canPlayInApp();
         var curPl = autoPl ? playlistById(autoPl) : null;
         // D'où sort la musique (modifiable en pleine partie)
-        dzBar = '<button id="audioToggle" class="w-full py-2.5 rounded-xl text-sm font-bold mb-3 ' + (plays ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">'
-          + (plays ? '📱 Musique jouée par l\'app' : '🔊 Son depuis une source à part') + ' · changer</button>';
+        // Le choix de la source sonore ne sert qu'au réglage : discret hors du salon.
+        dzBar = (s.phase === 'lobby')
+          ? '<button id="audioToggle" class="w-full py-2.5 rounded-xl text-sm font-bold mb-3 ' + (plays ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">'
+            + (plays ? '📱 Musique jouée par l\'app' : '🔊 Son depuis une source à part') + ' · changer</button>'
+          : '';
         // Playlist automatique : l'app enchaîne les morceaux toute seule.
         dzBar += '<div class="glass rounded-2xl p-3 mb-3">'
           + '<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">📻 Playlist auto</span>'
@@ -1818,9 +1828,17 @@
               : '<div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
                   return '<button class="plChip shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
                 }).join('') + '</div>')
-          + (curPl ? '<p class="text-white/40 text-xs mt-2">L\'app choisit le morceau suivant automatiquement — tu n\'as plus qu\'à lancer.</p>' : '')
+          + (curPl && s.phase === 'lobby' ? '<p class="text-white/40 text-xs mt-2">L\'app choisit le morceau suivant automatiquement — tu n\'as plus qu\'à lancer.</p>' : '')
           + '</div>';
-        dzBar += '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
+        // Entre deux manches, la playlist active tient en une ligne discrète.
+        if (curPl && s.phase !== 'lobby') {
+          dzBar = '<div class="flex items-center gap-2 mb-3 text-xs text-white/45"><span class="px-2.5 py-1 rounded-full bg-neon-violet/30 font-bold text-white/80">' + curPl.icon + ' ' + esc(curPl.name) + '</span>'
+            + '<span>' + playedIds.length + ' joué(s)</span>'
+            + '<button id="plOff" class="ml-auto underline">changer de playlist</button></div>';
+        }
+        // Si le lecteur intégré est affiché, il tient déjà lieu de carte morceau :
+        // on n'affiche pas deux fois le même titre (et on ne le dévoile pas).
+        dzBar += (canPlayInApp() && roundTrack) ? '' : '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack
           ? '<div class="flex items-center gap-3"><img src="' + esc(roundTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" /><div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">' + (roundTrack.auto ? '📻 Choisi automatiquement (caché)' : '🔒 Réponse enregistrée (cachée)') + '</div><div class="font-bold truncate text-sm">' + esc(roundTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(roundTrack.artist) + '</div></div><button id="dzopen" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
           : '<button id="dzopen" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🔎 ' + (plays ? 'Choisir un morceau' : 'Enregistrer la réponse du titre') + '</button>'
             + '<p class="text-white/40 text-xs mt-2 text-center">' + (plays
@@ -1830,9 +1848,10 @@
       var dzCtrl = '';
       // Lecteur chez l'hôte s'il n'y a pas de DJ tournant OU si c'est lui le DJ.
       var hostPlays = !s.dj || s.dj.id === ME;
-      if (roundTrack && canPlayInApp() && hostPlays && s.phase !== 'lobby' && s.phase !== 'ended') {
-        // Lecteur intégré : l'hôte joue la musique sans quitter l'appli.
-        dzCtrl = playerBar(roundTrack, { hidden: false });
+      if (roundTrack && canPlayInApp() && hostPlays && s.phase !== 'ended') {
+        // Lecteur intégré unique : titre MASQUÉ (l'écran est souvent visible de tous),
+        // bouton 👁 pour vérifier, 🔄 pour changer de morceau.
+        dzCtrl = playerBar(roundTrack, { hidden: true, onChange: true });
       } else if (false) {
         dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
           + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'
@@ -2081,8 +2100,10 @@
         (s.djRotate && s.phase !== 'lobby' && s.phase !== 'ended'
           ? '  <div class="text-center -mt-2 mb-3 text-xs ' + (fair.balanced ? 'text-neon-lime' : 'text-neon-gold') + '">' + (fair.balanced ? '⚖️ Équitable : chacun a eu le même nombre de titres jouables' : '⚖️ Cycle en cours — termine le tour de DJ pour un classement non ajusté') + '</div>'
           : ''),
-        (showTheme ? modeBar : ''),
-        (showTheme ? themeBar : ''),
+        // Au salon on montre tous les réglages ; entre deux manches on les replie
+        // pour ne garder à l'écran que ce qui sert vraiment (morceau + résultat).
+        (s.phase === 'lobby' ? modeBar + themeBar
+          : (showTheme ? '<details class="mb-3"><summary class="glass rounded-2xl px-4 py-2.5 text-sm font-bold text-white/60 cursor-pointer">⚙️ Réglages de la partie</summary><div class="mt-2">' + modeBar + themeBar + '</div></details>' : '')),
         dzBar,
         dzCtrl,
         '  <div class="mb-5">' + phaseBlock + '</div>',
@@ -2166,6 +2187,7 @@
       // Prépare le morceau suivant dès qu'on est en attente de lancement
       if (autoPl && !roundTrack && prepPhase) prefetchAuto();
       if (roundTrack && canPlayInApp() && (!s.dj || s.dj.id === ME)) bindPlayer(roundTrack, renderHost);
+      bind('#plyChange', function () { dzPause(); roundTrack = null; trackPeek = false; if (autoPl) prefetchAuto(); renderHost(); });
       bind('#audioToggle', function () {
         s.audioMode = (s.audioMode || 'device') === 'device' ? 'external' : 'device';
         appAudioMode = s.audioMode;
@@ -2316,7 +2338,7 @@
         // Sélection du morceau par le DJ, sur son propre téléphone.
         var inApp = (s.audioMode || 'device') === 'device';
         var djTrackBox = myTrack
-          ? (inApp ? playerBar(myTrack, { hidden: false }) : '')
+          ? (inApp ? playerBar(myTrack, { hidden: true }) : '')
             + '<div class="glass rounded-2xl p-3 mb-3 flex items-center gap-2">'
               + (inApp ? '' : '<img src="' + esc(myTrack.cover) + '" class="w-10 h-10 rounded-lg object-cover shrink-0" alt="" /><div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(myTrack.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(myTrack.artist) + '</div></div>')
               + (inApp ? '<span class="text-white/45 text-xs flex-1">🔊 La musique sort de <b>ton</b> téléphone</span>' : '')

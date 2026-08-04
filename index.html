@@ -795,6 +795,12 @@
     return renderHome();
   }
   window.addEventListener('hashchange', route);
+  /* Naviguer en étant sûr que la vue change : affecter un hash identique
+     ne déclenche pas d'événement, ce qui donnait des boutons « sans effet ». */
+  function go(h) {
+    if (location.hash.replace('#', '') === h) route();
+    else location.hash = h;
+  }
 
   /* --------------------------------------------------------------------------
      3. Vue ACCUEIL
@@ -857,7 +863,7 @@
       '</div>'
     ].join('');
 
-    $('#goHost').onclick = function () { location.hash = 'new'; };
+    $('#goHost').onclick = function () { go('new'); };
     bind('#installApp', function () {
       if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
       else toast('Menu du navigateur → « Ajouter à l\'écran d\'accueil » pour le plein écran', 'info');
@@ -871,7 +877,7 @@
     function join() {
       var v = code.value.trim().toUpperCase();
       if (v.length !== 6) { toast('Code à 6 caractères', 'err'); vibrate(80); return; }
-      location.hash = 'join=' + v;
+      go('join=' + v);
     }
     $('#joinBtn').onclick = join;
     code.onkeydown = function (e) { if (e.key === 'Enter') join(); };
@@ -1067,28 +1073,38 @@
     });
 
     $('#create').onclick = function () {
-      var hostName = $('#hostName').value.trim() || 'Hôte';
-      var partyName = $('#partyName').value.trim() || 'Blind Test';
-      store.set('hostName', hostName);
-      var cfg = {
-        pointsBuzz: parseInt($('#pBuzz').value, 10) || 0,
-        pointsVote: parseInt($('#pVote').value, 10) || 0,
-        pointsWrong: parseInt($('#pWrong').value, 10) || 0,
-        pointsVoteWrong: parseInt($('#pVoteWrong').value, 10) || 0,
-        voteSecs: Math.max(0, parseInt($('#voteSecs').value, 10) || 0)
-      };
-      // On enregistre l'état initial puis on bascule sur la route hôte :
-      // route() appellera startHost() (entrée unique, refresh-safe).
-      var st = initialState(genCode(), hostName, partyName, cfg);
-      st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
-      st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
-      st.turboSecs = Math.min(120, Math.max(10, parseInt(($('#turboSecs') || {}).value, 10) || 30));
-      st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
-      st.goal = setupGoal;
-      st.goalVal = Math.max(1, parseInt(($('#goalVal') || {}).value, 10) || (setupGoal === 'score' ? 50 : 20));
-      st.fredEvery = Math.max(1, parseInt($('#fredEvery').value, 10) || 10);
-      store.set('hostGame', st);
-      location.hash = 'host';
+      // Tout est protégé : une erreur ici laissait le bouton sans effet apparent.
+      try {
+        var val = function (sel, def) { var e = $(sel); var n = e ? parseInt(e.value, 10) : NaN; return isNaN(n) ? def : n; };
+        var txt = function (sel) { var e = $(sel); return e && e.value ? e.value.trim() : ''; };
+        var hostName = txt('#hostName') || 'Hôte';
+        var partyName = txt('#partyName') || 'Blind Test';
+        store.set('hostName', hostName);
+        var cfg = {
+          pointsBuzz: val('#pBuzz', 5),
+          pointsVote: val('#pVote', 2),
+          pointsWrong: val('#pWrong', -2),
+          pointsVoteWrong: val('#pVoteWrong', -1),
+          voteSecs: Math.max(0, val('#voteSecs', 10))
+        };
+        var st = initialState(genCode(), hostName, partyName, cfg);
+        st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
+        st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
+        st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
+        st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
+        st.goal = setupGoal;
+        st.goalVal = Math.max(1, val('#goalVal', setupGoal === 'score' ? 50 : 20));
+        st.fredEvery = Math.max(1, val('#fredEvery', 10));
+        store.set('hostGame', st);
+
+        // IMPORTANT : si le hash vaut déjà "host" (cas d'un retour au setup après
+        // une partie supprimée), l'affecter ne déclenche AUCUN hashchange, donc
+        // route() ne serait jamais rappelé et le clic semblerait sans effet.
+        if (location.hash.replace('#', '') === 'host') route();
+        else location.hash = 'host';
+      } catch (e) {
+        toast('Erreur au lancement : ' + (e && e.message ? e.message : e), 'err');
+      }
     };
   }
 

@@ -1012,18 +1012,20 @@
       '  <div class="grid grid-cols-1 gap-2 mb-2">',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="tournoi">',
       '      <div class="font-extrabold">🎧 Tournoi des DJ</div>',
-      '      <div class="text-xs opacity-80">Chacun devient DJ à son tour (3 titres), et quand <b>tout le monde est passé</b> : une finale à l\'aveugle où le dernier DJ rejoue aussi.</div></button>',
+      '      <div class="text-xs opacity-80">Chacun passe DJ à son tour et fait deviner 3 titres. Quand tout le monde est passé, une dernière manche où <b>personne ne connaît la réponse</b>.</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="aveugle">',
       '      <div class="font-extrabold">🕶️ Tous à l\'aveugle</div>',
-      '      <div class="text-xs opacity-80">Aucun DJ du début à la fin : l\'app choisit, joue et corrige. Le plus équitable, sur 10 manches.</div></button>',
+      '      <div class="text-xs opacity-80">Personne n\'anime : l\'app envoie les morceaux et corrige toute seule. <b>Tout le monde joue</b>, 10 manches. Le plus simple pour démarrer.</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="anim">',
       '      <div class="font-extrabold">🔊 Animateur unique</div>',
-      '      <div class="text-xs opacity-80">Tu animes toute la partie et tu valides les réponses. Le format classique.</div></button>',
+      '      <div class="text-xs opacity-80">Tu restes aux commandes : tu envoies les morceaux et tu dis qui a bon. Les autres jouent.</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="surprise">',
       '      <div class="font-extrabold">🎡 Soirée surprise</div>',
-      '      <div class="text-xs opacity-80">Rotation des DJ + roue des défis : le jeu change à chaque manche.</div></button>',
+      '      <div class="text-xs opacity-80">Comme le tournoi, mais <b>la règle change à chaque titre</b> : tantôt tout le monde répond en même temps, tantôt seul le titre compte, tantôt les points sont doublés…</div></button>',
       '  </div>',
-      '  <p class="text-white/40 text-xs mb-5">Tu peux ensuite ajuster chaque réglage ci-dessous.</p>',
+      '  <details class="mb-5">',
+      '    <summary class="glass rounded-2xl px-4 py-3 text-sm font-bold text-white/70 cursor-pointer">⚙️ Personnaliser (facultatif)</summary>',
+      '    <div class="mt-3">',
 
       // Mode « tout le monde à l'aveugle » : l'app fait le DJ, personne ne connaît la réponse.
       '  <button type="button" id="suBlind" class="w-full p-3 rounded-xl text-left bg-black/30 text-white/70 mb-2">',
@@ -1060,7 +1062,14 @@
       '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
       '  <button type="button" id="suWheel" class="w-full py-3.5 rounded-xl text-sm font-extrabold bg-black/30 text-white/60 mb-2">🎡 Roue des défis : OFF</button>',
-      '  <p class="text-white/40 text-xs mb-5">Activée, elle tire un <b>défi au hasard à chaque manche</b> (mode + règle spéciale) : Turbo, Titre seul, Double points, Mort subite… Le mode choisi ci-dessus est alors ignoré.</p>',
+      '  <p class="text-white/40 text-xs mb-1">Avant chaque titre, l\'app <b>tire une règle au sort</b> et l\'annonce à tout le monde. Exemples :</p>',
+      '  <ul class="text-white/40 text-xs mb-5 ml-4 list-disc space-y-0.5">',
+      '    <li><b>Tout le monde répond</b> — plus de buzz, chacun écrit, le plus rapide marque le plus</li>',
+      '    <li><b>Titre seul</b> ou <b>Artiste seul</b> — une seule des deux réponses suffit</li>',
+      '    <li><b>Double points</b> — cette manche vaut deux fois plus</li>',
+      '    <li><b>Mort subite</b> — points doublés, mais une erreur coûte double aussi</li>',
+      '  </ul>',
+      '  <p class="text-white/35 text-xs mb-5">Ça remplace le mode de jeu choisi au-dessus, manche après manche.</p>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔥 Bonus</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
@@ -1128,6 +1137,8 @@
       '    <p class="text-white/35 text-xs mt-2 text-center">Le vote récompense ceux qui jugent juste : bien voté = points, mal voté = malus.</p>',
       '  </div>',
 
+      '    </div>',
+      '  </details>',
       '  <button id="create" class="w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet shadow-lg active:animate-pop">Lancer la partie 🚀</button>',
       '</div>'
     ].join('');
@@ -1255,16 +1266,20 @@
         anim:     function () { choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
         surprise: function () { choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); }
       };
+      function applyStyle(b, silencieux) {
+        Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (x) {
+          x.className = x.className.replace('bg-gradient-to-r from-neon-pink to-neon-violet text-white', 'bg-black/30 text-white/70');
+        });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-gradient-to-r from-neon-pink to-neon-violet text-white');
+        var f = STYLES[b.getAttribute('data-style')]; if (f) f();
+        if (!silencieux) toast('Réglages appliqués ✓', 'ok');
+      }
       Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (b) {
-        b.onclick = function () {
-          Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (x) {
-            x.className = x.className.replace('bg-gradient-to-r from-neon-pink to-neon-violet text-white', 'bg-black/30 text-white/70');
-          });
-          b.className = b.className.replace('bg-black/30 text-white/70', 'bg-gradient-to-r from-neon-pink to-neon-violet text-white');
-          var f = STYLES[b.getAttribute('data-style')]; if (f) f();
-          toast('Réglages appliqués ✓', 'ok');
-        };
+        b.onclick = function () { applyStyle(b, false); };
       });
+      // Un style est actif d'emblée : on peut lancer sans rien régler.
+      var def = document.querySelector('.suStyle[data-style="tournoi"]');
+      if (def) applyStyle(def, true);
     })();
 
     $('#create').onclick = function () {

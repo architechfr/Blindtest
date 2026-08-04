@@ -1007,6 +1007,24 @@
       '  <input id="partyName" maxlength="30" placeholder="Samedi déglingo"',
       '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
 
+      // Styles de partie : un clic prépare tous les réglages d'un coup.
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎬 Style de partie</p>',
+      '  <div class="grid grid-cols-1 gap-2 mb-2">',
+      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="tournoi">',
+      '      <div class="font-extrabold">🎧 Tournoi des DJ</div>',
+      '      <div class="text-xs opacity-80">Chacun devient DJ à son tour (3 titres), et quand <b>tout le monde est passé</b> : une finale à l\'aveugle où le dernier DJ rejoue aussi.</div></button>',
+      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="aveugle">',
+      '      <div class="font-extrabold">🕶️ Tous à l\'aveugle</div>',
+      '      <div class="text-xs opacity-80">Aucun DJ du début à la fin : l\'app choisit, joue et corrige. Le plus équitable, sur 10 manches.</div></button>',
+      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="anim">',
+      '      <div class="font-extrabold">🔊 Animateur unique</div>',
+      '      <div class="text-xs opacity-80">Tu animes toute la partie et tu valides les réponses. Le format classique.</div></button>',
+      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="surprise">',
+      '      <div class="font-extrabold">🎡 Soirée surprise</div>',
+      '      <div class="text-xs opacity-80">Rotation des DJ + roue des défis : le jeu change à chaque manche.</div></button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5">Tu peux ensuite ajuster chaque réglage ci-dessous.</p>',
+
       // Mode « tout le monde à l'aveugle » : l'app fait le DJ, personne ne connaît la réponse.
       '  <button type="button" id="suBlind" class="w-full p-3 rounded-xl text-left bg-black/30 text-white/70 mb-2">',
       '    <div class="font-extrabold">🕶️ Partie à l\'aveugle — <span id="suBlindState">OFF</span></div>',
@@ -1218,6 +1236,36 @@
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-cyan text-black');
       };
     });
+
+    /* Un style = un jeu de réglages prêt à l'emploi. On réutilise les boutons
+       existants (clics simulés) pour que l'écran reflète bien le choix. */
+    (function () {
+      function press(sel, wanted) { // bascule un interrupteur seulement si besoin
+        var el = document.querySelector(sel); if (!el) return;
+        if (wanted !== null && ((wanted && el.textContent.indexOf('ON') >= 0) || (!wanted && el.textContent.indexOf('OFF') >= 0))) return;
+        el.click();
+      }
+      function choose(cls, attr, valeur) {
+        var el = document.querySelector('.' + cls + '[' + attr + '="' + valeur + '"]');
+        if (el) el.click();
+      }
+      var STYLES = {
+        tournoi:  function () { choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
+        aveugle:  function () { press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); },
+        anim:     function () { choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
+        surprise: function () { choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); }
+      };
+      Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (b) {
+        b.onclick = function () {
+          Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (x) {
+            x.className = x.className.replace('bg-gradient-to-r from-neon-pink to-neon-violet text-white', 'bg-black/30 text-white/70');
+          });
+          b.className = b.className.replace('bg-black/30 text-white/70', 'bg-gradient-to-r from-neon-pink to-neon-violet text-white');
+          var f = STYLES[b.getAttribute('data-style')]; if (f) f();
+          toast('Réglages appliqués ✓', 'ok');
+        };
+      });
+    })();
 
     $('#create').onclick = function () {
       // Tout est protégé : une erreur ici laissait le bouton sans effet apparent.
@@ -1505,9 +1553,12 @@
          personne n'est aux commandes — l'app choisit, joue et corrige, et le
          DJ sortant joue enfin lui aussi. */
       state.blindRound = 0;
+      var nbDj = rotationArr().length;
+      var tourComplet = nbDj > 0 && ((state._djIdx + 1) % nbDj === 0); // tous les DJ sont passés
       if (state.djRotate && state.blindFinal && state.djCount > 0
           && (state.djCount % (state.djEvery || 5) === 0)
-          && state._lastBlind !== state.djCount) {   // une seule fois par série
+          && tourComplet
+          && state._lastBlind !== state.djCount) {   // une seule fois par tour complet
         state.blindRound = 1;
         state.dj = null;              // aucun DJ sur cette manche
         state.mode = 'turbo';         // tout le monde répond

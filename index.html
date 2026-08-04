@@ -529,11 +529,15 @@
       + '<button id="plyToggle" class="w-14 h-14 rounded-full shrink-0 text-2xl font-extrabold flex items-center justify-center ' + (playing ? 'bg-white/15' : 'bg-gradient-to-br from-neon-lime to-neon-cyan text-black') + '">' + (playing ? '⏸' : '▶') + '</button>'
       + '</div>'
       + '<div class="flex items-center gap-2 mt-2">'
-      + '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">↺</button>'
-      + '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">' + (trackHidden ? '👁 afficher' : '🙈 masquer') + '</button>'
-      + (opts.onChange ? '<button id="plyChange" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">🔄 autre</button>' : '')
+      + '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold" title="Reprendre au début">↺</button>'
       + '<span id="plyTime" class="text-white/40 text-xs tabular-nums">0:00</span>'
-      + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1 min-w-0 ml-1" />'
+      + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1 min-w-0" />'
+      + '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold shrink-0">' + (trackHidden ? '👁' : '🙈') + '</button>'
+      + '</div>'
+      // Choisir un AUTRE morceau : recherche précise, ou tirage au sort dans la playlist.
+      + '<div class="grid ' + (opts.onChange ? 'grid-cols-2' : 'grid-cols-1') + ' gap-2 mt-2">'
+      + '<button id="plySearch" class="py-2.5 rounded-lg bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold text-sm">🔎 Chercher un titre / artiste</button>'
+      + (opts.onChange ? '<button id="plyChange" class="py-2.5 rounded-lg glass font-bold text-sm">🔄 Autre au hasard</button>' : '')
       + '</div></div>';
   }
   /* Branche les commandes du lecteur + la progression (événement natif, léger). */
@@ -2189,6 +2193,7 @@
       if (autoPl && !roundTrack && prepPhase) prefetchAuto();
       if (roundTrack && canPlayInApp() && (!s.dj || s.dj.id === ME)) bindPlayer(roundTrack, renderHost);
       bind('#plyChange', function () { dzPause(); roundTrack = null; if (autoPl) prefetchAuto(); renderHost(); });
+      bind('#plySearch', function () { dzPause(); openMusicPicker(); });
       bind('#audioToggle', function () {
         s.audioMode = (s.audioMode || 'device') === 'device' ? 'external' : 'device';
         appAudioMode = s.audioMode;
@@ -2557,6 +2562,19 @@
         }, lastState && lastState.theme ? lastState.theme : '');
       });
       if (myTrack && (lastState.audioMode || 'device') === 'device') bindPlayer(myTrack, renderPlayer);
+      // Depuis le lecteur du DJ : chercher un autre titre / repiocher au hasard
+      bind('#plySearch', function () {
+        dzPause();
+        openTrackPicker(function (t) {
+          myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
+          deezerTrack(t.id, function (full) {
+            if (full && full.release_date) myTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
+            renderPlayer();
+          });
+          toast('Morceau prêt 🎵', 'ok'); renderPlayer();
+        }, '');
+      });
+      bind('#plyChange', function () { dzPause(); myTrack = null; renderPlayer(); });
 
       // Au verdict, on joint la fiche du morceau : elle n'a circulé qu'à cet instant.
       var myReveal = function () { return myTrack ? { title: myTrack.title, artist: myTrack.artist, cover: myTrack.cover, year: myTrack.year } : null; };

@@ -391,6 +391,90 @@
   ];
   function playlistById(id) { for (var i = 0; i < PLAYLISTS.length; i++) if (PLAYLISTS[i].id === id) return PLAYLISTS[i]; return null; }
 
+  /* ---------------------------------------------------------------
+     Sélecteur de morceau réutilisable (utilisé par le DJ sur SON
+     téléphone). onPick(track) reçoit le morceau choisi.
+     --------------------------------------------------------------- */
+  function openTrackPicker(onPick, initialQuery) {
+    var el = document.getElementById('picker'); if (!el) return;
+    var results = [];
+    function draw(list, q, loading) {
+      var body;
+      if (loading) body = '<p class="text-white/50 text-center py-6">Recherche…</p>';
+      else if (list === null) body = '<p class="text-rose-400 text-center py-6">Erreur réseau, réessaie.</p>';
+      else if (list && list.length) {
+        body = list.map(function (t, i) {
+          return '<div class="dz-card mb-2">'
+            + '<img src="' + esc((t.album && t.album.cover_small) || '') + '" alt="" />'
+            + '<div class="flex-1 min-w-0"><div class="font-bold truncate text-sm">' + esc(t.title) + '</div><div class="text-white/50 text-xs truncate">' + esc(t.artist ? t.artist.name : '') + '</div></div>'
+            + (platform().plays ? '<button class="tpPrev px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">▶</button>' : '<button class="tpOpen px-3 py-2 rounded-lg glass text-sm" data-i="' + i + '">' + platform().icon + '↗</button>')
+            + '<button class="tpPick px-3 py-2 rounded-lg bg-neon-lime text-black font-bold text-sm" data-i="' + i + '">Choisir</button>'
+            + '</div>';
+        }).join('');
+      } else if (list) body = '<p class="text-white/40 text-center py-6">Aucun résultat.</p>';
+      else body = '<p class="text-white/40 text-center py-6">Cherche un titre ou un artiste.</p>';
+
+      el.innerHTML = [
+        '<div class="set-panel p-5 animate-slidein">',
+        '  <div class="flex items-center justify-between mb-3"><h2 class="bt-title text-lg font-extrabold glow-cyan">MON MORCEAU</h2><button id="tpClose" class="w-9 h-9 rounded-full glass text-lg">✕</button></div>',
+        '  <p class="text-white/50 text-xs mb-2">' + (platform().plays
+             ? 'Choisis le titre : il sera joué depuis <b>ton téléphone</b> (branché sur l\'enceinte) et restera caché.'
+             : 'Choisis le titre que tu vas lancer sur ' + esc(platform().name) + ' : il restera caché et servira à la révélation.') + '</p>',
+        '  <div class="flex gap-2 mb-3"><input id="tpq" value="' + esc(initialQuery || '') + '" placeholder="Titre ou artiste…" class="flex-1 bg-black/40 rounded-xl px-4 py-3 outline-none focus:ring-2 ring-neon-cyan" /><button id="tpgo" class="px-4 rounded-xl bg-neon-cyan text-black font-extrabold">🔎</button></div>',
+        '  <div class="overflow-y-auto" style="max-height:52dvh">' + body + '</div>',
+        '  <p class="text-xs font-bold uppercase text-white/45 mt-4 mb-2">Ou pioche dans une playlist</p>',
+        '  <div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
+             return '<button class="tpPl shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
+           }).join('') + '</div>',
+        '</div>'
+      ].join('');
+      el.classList.remove('hidden');
+      el.onclick = function (e) { if (e.target === el) { dzPause(); el.classList.add('hidden'); el.innerHTML = ''; } };
+      bind('#tpClose', function () { dzPause(); el.classList.add('hidden'); el.innerHTML = ''; });
+
+      var go = function () {
+        var q2 = ($('#tpq') || {}).value || '';
+        draw(null, q2, true);
+        deezerSearch(q2, function (r) { results = (r && r.length) ? r : (r === null ? null : []); draw(results, q2, false); });
+      };
+      bind('#tpgo', go);
+      var qi = $('#tpq'); if (qi) qi.onkeydown = function (e) { if (e.key === 'Enter') go(); };
+
+      Array.prototype.forEach.call(el.querySelectorAll('.tpPrev'), function (b) {
+        b.onclick = function () { var t = results[+b.getAttribute('data-i')]; if (t) dzPlay(t.preview); };
+      });
+      Array.prototype.forEach.call(el.querySelectorAll('.tpOpen'), function (b) {
+        b.onclick = function () {
+          var t = results[+b.getAttribute('data-i')]; if (!t) return;
+          var p = platform(); if (!p.url) return;
+          window.open(p.url(t.title + ' ' + (t.artist ? t.artist.name : '')), '_blank', 'noopener');
+        };
+      });
+      Array.prototype.forEach.call(el.querySelectorAll('.tpPick'), function (b) {
+        b.onclick = function () {
+          var t = results[+b.getAttribute('data-i')]; if (!t) return;
+          dzPause();
+          el.classList.add('hidden'); el.innerHTML = '';
+          onPick(t);
+        };
+      });
+      // Pioche aléatoire dans une playlist thématique
+      Array.prototype.forEach.call(el.querySelectorAll('.tpPl'), function (b) {
+        b.onclick = function () {
+          var pl = playlistById(b.getAttribute('data-pl')); if (!pl) return;
+          draw(null, '', true);
+          autoPick(pl, [], function (t) {
+            if (!t) { draw([], '', false); toast('Rien trouvé, réessaie', 'err'); return; }
+            results = [t]; draw(results, pl.name, false);
+          });
+        };
+      });
+      if (qi && !initialQuery) qi.focus();
+    }
+    draw(undefined, initialQuery || '', false);
+    if (initialQuery) { draw(null, initialQuery, true); deezerSearch(initialQuery, function (r) { results = r || []; draw(results, initialQuery, false); }); }
+  }
+
   /* Tire un morceau de la playlist, en évitant ceux déjà joués. cb(track|null) */
   function autoPick(pl, usedIds, cb, tries) {
     tries = tries || 0;
@@ -1090,6 +1174,8 @@
         var isSource = state.source && state.source.id === p.id;
         var isDJ = state.dj && state.dj.id === p.id;
         if ((state.phase === 'judging' || state.phase === 'voting') && (isSource || isDJ)) {
+          // Le DJ joint la fiche de SON morceau : on l'utilise pour la révélation.
+          if (p.reveal && p.reveal.title) roundTrack = p.reveal;
           validate(p.correct === true, p.partial === true);
         }
       } else if (p.action === 'grade') {
@@ -1101,7 +1187,10 @@
       } else if (p.action === 'closeRace') {
         if (state.phase === 'racing' && state.dj && state.dj.id === p.id) closeRacing();
       } else if (p.action === 'applyTurbo') {
-        if (state.phase === 'grading' && state.dj && state.dj.id === p.id) applyTurbo();
+        if (state.phase === 'grading' && state.dj && state.dj.id === p.id) {
+          if (p.reveal && p.reveal.title) roundTrack = p.reveal;
+          applyTurbo();
+        }
       } else if (p.action === 'guess') {
         // Devine l'année : un joueur propose une année.
         if (state.phase === 'year_guess') {
@@ -2012,6 +2101,9 @@
     var lastState = null;
     var voted = false, guessed = false, answered = false, lastPhase = null;
     var raceMine = null, raceCount = 0, raceTotal = 0; // suivi local du mode Turbo
+    // Morceau choisi par le DJ sur SON téléphone. Gardé en local : il n'est
+    // transmis qu'au moment du verdict, donc personne ne peut le lire avant.
+    var myTrack = null;
     keepAwake();
 
     var chan = openChannel(code, { id: ME, name: name, role: 'player' }, {
@@ -2094,11 +2186,25 @@
       var center = '';
       // Si je suis le DJ de la série, je ne joue pas : je choisis les morceaux.
       if (imDJ && s.phase !== 'lobby' && s.phase !== 'ended') {
-        var djHdr = '<div class="text-center mb-4"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' de ta série</p></div>';
+        var djHdr = '<div class="text-center mb-3"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' de ta série</p></div>';
+        // Sélection du morceau par le DJ, sur son propre téléphone.
+        var djTrackBox = '<div class="glass rounded-2xl p-3 mb-4">'
+          + (myTrack
+              ? '<div class="flex items-center gap-3"><img src="' + esc(myTrack.cover) + '" class="w-12 h-12 rounded-lg object-cover" alt="" />'
+                + '<div class="flex-1 min-w-0"><div class="text-xs text-neon-lime font-bold">🔒 Ton morceau (caché)</div>'
+                + '<div class="font-bold truncate text-sm">' + esc(myTrack.title) + '</div>'
+                + '<div class="text-white/50 text-xs truncate">' + esc(myTrack.artist) + '</div></div>'
+                + '<button id="djPickTrack" class="px-3 py-2 rounded-lg glass text-sm shrink-0">Changer</button></div>'
+                + (platform().plays
+                    ? '<div class="grid grid-cols-2 gap-2 mt-2"><button id="djPlay" class="py-2.5 rounded-lg bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold text-sm">▶ Jouer sur l\'enceinte</button>'
+                      + '<button id="djStop" class="py-2.5 rounded-lg glass font-bold text-sm">⏸ Pause</button></div>'
+                    : '<p class="text-white/40 text-xs mt-2">Lance-le depuis ' + esc(platform().name) + ' sur l\'enceinte.</p>')
+              : '<button id="djPickTrack" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold">🎵 Choisir mon morceau</button>'
+                + '<p class="text-white/40 text-xs mt-2 text-center">Cherche un titre ou pioche dans une playlist. Il restera caché.</p>')
+          + '</div>';
         if (s.phase === 'racing') {
           var gotD = Math.max(raceCount, Object.keys(s.answers || {}).length);
-          center = '<div class="w-full animate-slidein">' + djHdr
-            + '<p class="text-center text-white/60 mb-2">Lance ton morceau 🎵</p>'
+          center = '<div class="w-full animate-slidein">' + djHdr + djTrackBox
             + '<div class="text-center text-3xl font-extrabold text-neon-cyan">' + gotD + '</div><p class="text-center text-white/40 text-xs mb-4">réponses reçues</p>'
             + '<button id="djCloseRace" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">Clore et corriger ✍️</button></div>';
         } else if (s.phase === 'grading') {
@@ -2126,9 +2232,8 @@
             + (am === 'both' ? '<button id="djHalf" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">≈ À moitié (titre OU artiste)</button>' : '')
             + '</div>';
         } else {
-          center = '<div class="text-center animate-slidein">' + djHdr
-            + '<p class="text-white/60 mt-2">Choisis et lance ton morceau 🎵</p>'
-            + '<p class="text-white/40 text-sm mt-1">Tu ne marques pas de points sur ta série</p>'
+          center = '<div class="w-full animate-slidein">' + djHdr + djTrackBox
+            + '<p class="text-white/40 text-sm mt-1 text-center">Tu ne marques pas de points sur ta série</p>'
             + (s.reveal ? revealCard(s.reveal) : '') + '</div>';
         }
       } else if (s.phase === 'lobby') {
@@ -2293,11 +2398,27 @@
       bind('#jokX2', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'x2' }); beep(920, 0.1, 'sine'); vibrate(50); toast('Joker ×2 activé 🃏', 'ok'); });
       bind('#jokSh', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'sh' }); beep(700, 0.1, 'sine'); vibrate(50); toast('Bouclier activé 🛡️', 'ok'); });
       // Contrôles du DJ de la série (depuis son propre téléphone)
-      bind('#djCloseRace', function () { chan.sendIntent({ action: 'closeRace', id: ME }); });
-      bind('#djApply', function () { chan.sendIntent({ action: 'applyTurbo', id: ME }); });
-      bind('#djOk', function () { chan.sendIntent({ action: 'judge', id: ME, correct: true }); });
-      bind('#djKo', function () { chan.sendIntent({ action: 'judge', id: ME, correct: false }); });
-      bind('#djHalf', function () { chan.sendIntent({ action: 'judge', id: ME, correct: true, partial: true }); });
+      // Le DJ choisit son morceau depuis son téléphone (reste caché jusqu'au verdict)
+      bind('#djPickTrack', function () {
+        openTrackPicker(function (t) {
+          myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
+          deezerTrack(t.id, function (full) {
+            if (full && full.release_date) myTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
+            renderPlayer();
+          });
+          toast('Morceau prêt 🔒', 'ok'); renderPlayer();
+        }, lastState && lastState.theme ? lastState.theme : '');
+      });
+      bind('#djPlay', function () { if (myTrack) dzPlay(myTrack.preview); });
+      bind('#djStop', dzPause);
+
+      // Au verdict, on joint la fiche du morceau : elle n'a circulé qu'à cet instant.
+      var myReveal = function () { return myTrack ? { title: myTrack.title, artist: myTrack.artist, cover: myTrack.cover, year: myTrack.year } : null; };
+      bind('#djCloseRace', function () { dzPause(); chan.sendIntent({ action: 'closeRace', id: ME }); });
+      bind('#djApply', function () { chan.sendIntent({ action: 'applyTurbo', id: ME, reveal: myReveal() }); myTrack = null; });
+      bind('#djOk', function () { dzPause(); chan.sendIntent({ action: 'judge', id: ME, correct: true, reveal: myReveal() }); myTrack = null; });
+      bind('#djKo', function () { dzPause(); chan.sendIntent({ action: 'judge', id: ME, correct: false, reveal: myReveal() }); myTrack = null; });
+      bind('#djHalf', function () { dzPause(); chan.sendIntent({ action: 'judge', id: ME, correct: true, partial: true, reveal: myReveal() }); myTrack = null; });
       Array.prototype.forEach.call(document.querySelectorAll('.djGrade'), function (b) {
         b.onclick = function () { chan.sendIntent({ action: 'grade', id: ME, target: b.getAttribute('data-id'), g: b.getAttribute('data-g') }); beep(660, 0.05, 'sine'); };
       });

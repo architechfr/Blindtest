@@ -514,7 +514,8 @@
     opts = opts || {};
     if (!track) return '';
     var playing = dzAudio && !dzAudio.paused && dzAudio.src === track.preview;
-    var show = !trackHidden; // visible par défaut ; le DJ peut masquer s'il le veut
+    // blind = partie à l'aveugle : le titre reste secret pour TOUT LE MONDE, hôte compris.
+    var show = opts.blind ? false : !trackHidden;
     return '<div class="glass rounded-2xl p-3 mb-3">'
       + '<div class="flex items-center gap-3">'
       + (show
@@ -532,13 +533,16 @@
       + '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold" title="Reprendre au début">↺</button>'
       + '<span id="plyTime" class="text-white/40 text-xs tabular-nums">0:00</span>'
       + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1 min-w-0" />'
-      + '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold shrink-0">' + (trackHidden ? '👁' : '🙈') + '</button>'
+      + (opts.blind ? '' : '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold shrink-0">' + (trackHidden ? '👁' : '🙈') + '</button>')
       + '</div>'
       // Choisir un AUTRE morceau : recherche précise, ou tirage au sort dans la playlist.
-      + '<div class="grid ' + (opts.onChange ? 'grid-cols-2' : 'grid-cols-1') + ' gap-2 mt-2">'
-      + '<button id="plySearch" class="py-2.5 rounded-lg bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold text-sm">🔎 Chercher un titre / artiste</button>'
-      + (opts.onChange ? '<button id="plyChange" class="py-2.5 rounded-lg glass font-bold text-sm">🔄 Autre au hasard</button>' : '')
-      + '</div></div>';
+      // (Rien de tout ça à l'aveugle : l'app décide seule.)
+      + (opts.blind ? '' :
+          '<div class="grid ' + (opts.onChange ? 'grid-cols-2' : 'grid-cols-1') + ' gap-2 mt-2">'
+          + '<button id="plySearch" class="py-2.5 rounded-lg bg-gradient-to-r from-neon-cyan to-neon-lime text-black font-extrabold text-sm">🔎 Chercher un titre / artiste</button>'
+          + (opts.onChange ? '<button id="plyChange" class="py-2.5 rounded-lg glass font-bold text-sm">🔄 Autre au hasard</button>' : '')
+          + '</div>')
+      + '</div>';
   }
   /* Branche les commandes du lecteur + la progression (événement natif, léger). */
   function bindPlayer(track, onChange) {
@@ -915,6 +919,18 @@
       '  <input id="partyName" maxlength="30" placeholder="Samedi déglingo"',
       '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
 
+      // Mode « tout le monde à l'aveugle » : l'app fait le DJ, personne ne connaît la réponse.
+      '  <button type="button" id="suBlind" class="w-full p-3 rounded-xl text-left bg-black/30 text-white/70 mb-2">',
+      '    <div class="font-extrabold">🕶️ Partie à l\'aveugle — <span id="suBlindState">OFF</span></div>',
+      '    <div class="text-xs opacity-80">Aucun DJ : l\'app choisit les morceaux, les joue et corrige toute seule. <b>Tout le monde joue à égalité</b>, sur un nombre de manches fixé. Le plus équitable.</div></button>',
+      '  <div id="suBlindBox" class="glass rounded-2xl p-3 mb-5" style="display:none">',
+      '    <p class="text-xs font-bold uppercase text-white/50 mb-2">Playlist de la partie</p>',
+      '    <div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
+           return '<button type="button" class="suBlindPl shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
+         }).join('') + '</div>',
+      '    <div class="flex items-center gap-2 mt-3 text-sm text-white/60"><span>🏁 Nombre de manches :</span><input id="suBlindRounds" type="number" min="3" max="50" value="10" class="w-16 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
+      '  </div>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔈 D\'où sort la musique ?</p>',
       '  <div class="grid grid-cols-1 gap-2 mb-2">',
       '    <button type="button" class="suAudio p-3 rounded-xl text-left bg-neon-violet text-white" data-audio="device">',
@@ -1011,6 +1027,27 @@
     $('#back').onclick = function () { location.hash = ''; };
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
+    var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10;
+    (function () {
+      var bb = document.getElementById('suBlind');
+      var refreshPl = function () {
+        Array.prototype.forEach.call(document.querySelectorAll('.suBlindPl'), function (x) {
+          var on = x.getAttribute('data-pl') === setupBlindPl;
+          x.className = 'suBlindPl shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ' + (on ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/75');
+        });
+      };
+      if (bb) bb.onclick = function () {
+        setupBlind = setupBlind ? 0 : 1;
+        bb.className = 'w-full p-3 rounded-xl text-left mb-2 ' + (setupBlind ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/70');
+        var st = document.getElementById('suBlindState'); if (st) st.textContent = setupBlind ? 'ON' : 'OFF';
+        var box = document.getElementById('suBlindBox'); if (box) box.style.display = setupBlind ? '' : 'none';
+        refreshPl();
+      };
+      Array.prototype.forEach.call(document.querySelectorAll('.suBlindPl'), function (b) {
+        b.onclick = function () { setupBlindPl = b.getAttribute('data-pl'); refreshPl(); };
+      });
+      refreshPl();
+    })();
     Array.prototype.forEach.call(document.querySelectorAll('.suAudio'), function (b) {
       b.onclick = function () {
         setupAudio = b.getAttribute('data-audio');
@@ -1107,6 +1144,19 @@
         st.goal = setupGoal;
         st.goalVal = Math.max(1, val('#goalVal', setupGoal === 'score' ? 50 : 20));
         st.fredEvery = Math.max(1, val('#fredEvery', 10));
+
+        /* Partie à l'aveugle : l'app fait tout. On force les réglages cohérents
+           pour que personne ne puisse connaître la réponse à l'avance. */
+        if (setupBlind) {
+          st.blind = 1;
+          st.mode = 'turbo';        // tout le monde répond en même temps
+          st.djRotate = 0;          // aucun DJ
+          st.wheel = 0;             // pas de changement de mode surprise
+          st.audioMode = 'device';  // c'est l'app qui joue
+          st.goal = 'rounds';
+          st.goalVal = Math.min(50, Math.max(3, val('#suBlindRounds', 10)));
+          store.set('autoPlaylist', setupBlindPl); // playlist choisie pour la partie
+        }
         store.set('hostGame', st);
 
         // IMPORTANT : si le hash vaut déjà "host" (cas d'un retour au setup après
@@ -1131,7 +1181,7 @@
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
-      wheel: 0, challenge: null, mult: 1, audioMode: 'device',
+      wheel: 0, challenge: null, mult: 1, audioMode: 'device', blind: 0,
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -1306,7 +1356,7 @@
 
     /* L'hôte fait partie des joueurs dès qu'il y a rotation DJ ou mode Fredonne :
        il joue comme les autres, sauf sur les manches où c'est lui le DJ / le fredonneur. */
-    if (state.djRotate || state.mode === 'fredonne') ensurePlayer(ME, state.hostName);
+    if (state.djRotate || state.mode === 'fredonne' || state.blind) ensurePlayer(ME, state.hostName);
 
     var chan = openChannel(code, { id: ME, name: state.hostName, role: 'host' }, {
       onIntent: onIntent,
@@ -1523,6 +1573,9 @@
         var g = fuzzyHit(state.answers[id].text, roundTrack, state.answerMode);
         state.grades[id] = g || 'ko'; // pré-notation auto, l'hôte peut corriger
       });
+      // Partie à l'aveugle : personne ne connaît la réponse, donc personne ne
+      // corrige — l'app tranche seule et enchaîne directement sur les résultats.
+      if (state.blind) { applyTurbo(); return; }
       state.phase = 'grading';
       publish();
     }
@@ -1817,6 +1870,13 @@
         var plays = canPlayInApp();
         var curPl = autoPl ? playlistById(autoPl) : null;
         // D'où sort la musique (modifiable en pleine partie)
+        // En partie à l'aveugle, l'app gère tout : ni sélection ni playlist à proposer.
+        if (s.blind) {
+          dzBar = '<div class="glass rounded-2xl p-3 mb-3 text-center">'
+            + '<div class="text-xs font-bold uppercase text-white/50">🕶️ Partie à l\'aveugle</div>'
+            + '<div class="font-extrabold mt-0.5">' + (curPl ? curPl.icon + ' ' + esc(curPl.name) : 'Playlist') + ' · manche ' + Math.max(1, s.round) + '/' + (s.goalVal || 10) + '</div>'
+            + '<div class="text-white/45 text-xs mt-1">Personne ne connaît la réponse — l\'app choisit, joue et corrige.</div></div>';
+        } else {
         // Le choix de la source sonore ne sert qu'au réglage : discret hors du salon.
         dzBar = (s.phase === 'lobby')
           ? '<button id="audioToggle" class="w-full py-2.5 rounded-xl text-sm font-bold mb-3 ' + (plays ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">'
@@ -1849,6 +1909,7 @@
             + '<p class="text-white/40 text-xs mt-2 text-center">' + (plays
                 ? 'Extraits fournis par l\'app — <b>aucun compte ni abonnement</b> requis.'
                 : 'Tu lances la musique depuis ' + esc(platform().name) + ' — ceci sert à révéler le titre et corriger automatiquement.') + '</p>') + '</div>';
+        } // fin du cas « partie normale »
       }
       var dzCtrl = '';
       // Lecteur chez l'hôte s'il n'y a pas de DJ tournant OU si c'est lui le DJ.
@@ -1856,7 +1917,8 @@
       if (roundTrack && canPlayInApp() && hostPlays && s.phase !== 'ended') {
         // Lecteur intégré unique : titre MASQUÉ (l'écran est souvent visible de tous),
         // bouton 👁 pour vérifier, 🔄 pour changer de morceau.
-        dzCtrl = playerBar(roundTrack, { hidden: true, onChange: true });
+        // À l'aveugle, l'hôte joue aussi : le morceau doit rester secret pour lui.
+        dzCtrl = s.blind ? playerBar(roundTrack, { blind: true }) : playerBar(roundTrack, { onChange: true });
       } else if (false) {
         dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
           + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'

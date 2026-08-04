@@ -507,12 +507,14 @@
      sortir de l'application. `hidden` masque le titre (anti-spoil
      si quelqu'un regarde par-dessus l'épaule).
      --------------------------------------------------------------- */
-  var trackPeek = false; // le DJ a demandé à voir le titre (bouton œil)
+  // Le DJ voit SON morceau par défaut (il doit le choisir, le lancer, corriger).
+  // Le masquage est une option, s'il craint les regards indiscrets.
+  var trackHidden = false;
   function playerBar(track, opts) {
     opts = opts || {};
     if (!track) return '';
     var playing = dzAudio && !dzAudio.paused && dzAudio.src === track.preview;
-    var show = !opts.hidden || trackPeek; // masqué par défaut : l'écran est souvent visible de tous
+    var show = !trackHidden; // visible par défaut ; le DJ peut masquer s'il le veut
     return '<div class="glass rounded-2xl p-3 mb-3">'
       + '<div class="flex items-center gap-3">'
       + (show
@@ -528,7 +530,7 @@
       + '</div>'
       + '<div class="flex items-center gap-2 mt-2">'
       + '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">↺</button>'
-      + (opts.hidden ? '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">' + (trackPeek ? '🙈 cacher' : '👁 voir') + '</button>' : '')
+      + '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">' + (trackHidden ? '👁 afficher' : '🙈 masquer') + '</button>'
       + (opts.onChange ? '<button id="plyChange" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold">🔄 autre</button>' : '')
       + '<span id="plyTime" class="text-white/40 text-xs tabular-nums">0:00</span>'
       + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1 min-w-0 ml-1" />'
@@ -545,7 +547,7 @@
       if (onChange) setTimeout(onChange, 60);
     });
     bind('#plyRestart', function () { dzPlay(track.preview); if (onChange) setTimeout(onChange, 60); });
-    bind('#plyPeek', function () { trackPeek = !trackPeek; if (onChange) onChange(); });
+    bind('#plyPeek', function () { trackHidden = !trackHidden; if (onChange) onChange(); });
     var v = $('#plyVol'); if (v) v.oninput = function () { if (dzAudio) dzAudio.volume = parseFloat(v.value); };
     if (dzAudio) {
       dzAudio.ontimeupdate = function () {
@@ -1316,7 +1318,6 @@
 
     /* Actions hôte (machine à états) */
     function resetRound() {
-      trackPeek = false; // le titre redevient masque
       state.buzzer = null; state.answer = null; state.votes = {}; state.result = null; state.guesses = {}; state.year = null;
       state.reveal = null; state.suggest = null;
       state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
@@ -2187,7 +2188,7 @@
       // Prépare le morceau suivant dès qu'on est en attente de lancement
       if (autoPl && !roundTrack && prepPhase) prefetchAuto();
       if (roundTrack && canPlayInApp() && (!s.dj || s.dj.id === ME)) bindPlayer(roundTrack, renderHost);
-      bind('#plyChange', function () { dzPause(); roundTrack = null; trackPeek = false; if (autoPl) prefetchAuto(); renderHost(); });
+      bind('#plyChange', function () { dzPause(); roundTrack = null; if (autoPl) prefetchAuto(); renderHost(); });
       bind('#audioToggle', function () {
         s.audioMode = (s.audioMode || 'device') === 'device' ? 'external' : 'device';
         appAudioMode = s.audioMode;

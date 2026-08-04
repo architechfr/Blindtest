@@ -372,6 +372,47 @@
   function deezerTrack(id, cb) { jsonp('https://api.deezer.com/track/' + id, function (d) { cb(d || null); }); }
 
   /* ---------------------------------------------------------------
+     Deuxième banque d'extraits : Apple/iTunes (gratuite, sans compte,
+     sans publicité). Catalogue et surtout POINT DE DÉPART des extraits
+     différents de Deezer — utile quand l'extrait Deezer tombe mal.
+     Les résultats sont normalisés au format Deezer pour que le reste
+     du code n'ait rien à changer ; l'année est fournie directement.
+     --------------------------------------------------------------- */
+  function itunesSearch(q, cb) {
+    if (!q) { cb([]); return; }
+    var url = 'https://itunes.apple.com/search?entity=song&limit=12&country=FR&term=' + encodeURIComponent(q);
+    try {
+      fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+        var list = (d && d.results ? d.results : []).filter(function (t) { return t.previewUrl; }).map(function (t) {
+          return {
+            id: t.trackId,
+            title: t.trackName,
+            artist: { name: t.artistName },
+            album: { cover_small: (t.artworkUrl60 || t.artworkUrl100 || ''), cover_medium: (t.artworkUrl100 || '').replace('100x100', '300x300') },
+            preview: t.previewUrl,
+            year: parseInt(String(t.releaseDate || '').slice(0, 4), 10) || null
+          };
+        });
+        cb(list);
+      }).catch(function () { cb(null); });
+    } catch (e) { cb(null); }
+  }
+
+  /* Recherche via la banque choisie dans les réglages. */
+  function musicSearch(q, cb) {
+    if (prefs && prefs.previewSrc === 'itunes') itunesSearch(q, cb);
+    else deezerSearch(q, cb);
+  }
+  /* Complète l'année si la banque ne l'a pas déjà fournie. */
+  function fillYear(t, obj, done) {
+    if (t && t.year) { obj.year = t.year; done && done(); return; }
+    deezerTrack(t.id, function (full) {
+      if (full && full.release_date) obj.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
+      done && done();
+    });
+  }
+
+  /* ---------------------------------------------------------------
      PLAYLISTS AUTOMATIQUES
      Un seul téléphone branché sur l'enceinte : l'app choisit elle-même
      le morceau suivant. Chaque playlist est une liste d'artistes ;
@@ -435,7 +476,7 @@
       var go = function () {
         var q2 = ($('#tpq') || {}).value || '';
         draw(null, q2, true);
-        deezerSearch(q2, function (r) { results = (r && r.length) ? r : (r === null ? null : []); draw(results, q2, false); });
+        musicSearch(q2, function (r) { results = (r && r.length) ? r : (r === null ? null : []); draw(results, q2, false); });
       };
       bind('#tpgo', go);
       var qi = $('#tpq'); if (qi) qi.onkeydown = function (e) { if (e.key === 'Enter') go(); };
@@ -472,7 +513,7 @@
       if (qi && !initialQuery) qi.focus();
     }
     draw(undefined, initialQuery || '', false);
-    if (initialQuery) { draw(null, initialQuery, true); deezerSearch(initialQuery, function (r) { results = r || []; draw(results, initialQuery, false); }); }
+    if (initialQuery) { draw(null, initialQuery, true); musicSearch(initialQuery, function (r) { results = r || []; draw(results, initialQuery, false); }); }
   }
 
   /* Tire un morceau de la playlist, en évitant ceux déjà joués. cb(track|null) */
@@ -480,7 +521,7 @@
     tries = tries || 0;
     if (!pl || tries >= 4) { cb(null); return; }
     var artist = pl.artists[(Math.random() * pl.artists.length) | 0];
-    deezerSearch(artist, function (res) {
+    musicSearch(artist, function (res) {
       if (!res || !res.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
       var pool = res.filter(function (t) { return t.preview && usedIds.indexOf(t.id) < 0; });
       if (!pool.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
@@ -1212,10 +1253,7 @@
         playedIds.push(t.id);
         if (playedIds.length > 200) playedIds.shift();
         roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, auto: true };
-        deezerTrack(t.id, function (full) {
-          if (full && full.release_date) roundTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
-          renderHost();
-        });
+        fillYear(t, roundTrack, renderHost);
         renderHost();
       });
     }
@@ -1677,7 +1715,7 @@
         pickerEl.classList.remove('hidden');
         pickerEl.onclick = function (e) { if (e.target === pickerEl) closePicker(); };
         bind('#dzClose', closePicker);
-        var go = function () { var q2 = ($('#dzq') || {}).value || ''; render(null, q2, true); deezerSearch(q2, function (res) { lastResults = (res && res.length) ? res : (res === null ? null : []); render(lastResults, q2, false); }); };
+        var go = function () { var q2 = ($('#dzq') || {}).value || ''; render(null, q2, true); musicSearch(q2, function (res) { lastResults = (res && res.length) ? res : (res === null ? null : []); render(lastResults, q2, false); }); };
         bind('#dzgo', go);
         var qi = $('#dzq'); if (qi) qi.onkeydown = function (e) { if (e.key === 'Enter') go(); };
         Array.prototype.forEach.call(pickerEl.querySelectorAll('.dzPrev'), function (b) { b.onclick = function () { var t = lastResults[+b.getAttribute('data-i')]; if (t) dzPlay(t.preview); }; });
@@ -1694,7 +1732,7 @@
             var t = lastResults[+b.getAttribute('data-i')]; if (!t) return;
             dzPause();
             roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
-            deezerTrack(t.id, function (full) { if (full && full.release_date) roundTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null; renderHost(); });
+            fillYear(t, roundTrack, renderHost);
             closePicker(); toast('Morceau prêt 🔒', 'ok'); renderHost();
           };
         });
@@ -1702,7 +1740,7 @@
       }
       var initQ = state.theme || '';
       render([], initQ, false);
-      if (initQ) { render(null, initQ, true); deezerSearch(initQ, function (res) { lastResults = res || []; render(lastResults, initQ, false); }); }
+      if (initQ) { render(null, initQ, true); musicSearch(initQ, function (res) { lastResults = res || []; render(lastResults, initQ, false); }); }
     }
 
     /* Panneau « Inviter / faire revenir un joueur » — accessible à TOUT MOMENT.
@@ -2616,10 +2654,7 @@
       bind('#djPickTrack', function () {
         openTrackPicker(function (t) {
           myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
-          deezerTrack(t.id, function (full) {
-            if (full && full.release_date) myTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
-            renderPlayer();
-          });
+          fillYear(t, myTrack, renderPlayer);
           toast('Morceau prêt 🔒', 'ok'); renderPlayer();
         }, lastState && lastState.theme ? lastState.theme : '');
       });
@@ -2629,10 +2664,7 @@
         dzPause();
         openTrackPicker(function (t) {
           myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
-          deezerTrack(t.id, function (full) {
-            if (full && full.release_date) myTrack.year = parseInt(String(full.release_date).slice(0, 4), 10) || null;
-            renderPlayer();
-          });
+          fillYear(t, myTrack, renderPlayer);
           toast('Morceau prêt 🎵', 'ok'); renderPlayer();
         }, '');
       });
@@ -2934,7 +2966,8 @@
     noanim: store.get('noanim', false),
     deezer: store.get('deezer', true),
     eco: store.get('eco', false),
-    platform: store.get('platform', 'deezer') // deezer | spotify | ytmusic | apple | amazon | other
+    platform: store.get('platform', 'deezer'), // deezer | spotify | ytmusic | apple | amazon | other
+    previewSrc: store.get('previewSrc', 'deezer') // banque d'extraits : deezer | itunes
   };
 
   /* Plateformes musicales : l'audio sort de TON appli habituelle (sur l'enceinte),
@@ -3028,6 +3061,11 @@
       '    </div>',
       '  </div>',
 
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">🎧 Banque d\'extraits</p>',
+      '  <div class="grid grid-cols-2 gap-2">'
+      + '<button id="srcDeezer" class="py-2.5 rounded-xl text-sm font-bold ' + (prefs.previewSrc !== 'itunes' ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">Deezer</button>'
+      + '<button id="srcItunes" class="py-2.5 rounded-xl text-sm font-bold ' + (prefs.previewSrc === 'itunes' ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">Apple / iTunes</button></div>',
+      '  <p class="text-white/40 text-xs mt-2">Deux banques d\'extraits de 30 s, <b>gratuites et sans publicité</b>. Elles n\'ont ni le même catalogue ni le même <b>passage extrait</b> : si un morceau démarre mal (ou est introuvable), essaie l\'autre.</p>',
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">🎵 Mon service musical</p>',
       '  <p class="text-white/45 text-xs mb-2">Utile <b>uniquement</b> si tu choisis « source à part » au démarrage : les liens ↗ ouvriront alors ce service. Si l\'app joue la musique, ce réglage ne sert à rien — <b>aucun abonnement n\'est requis</b>.</p>',
       '  <div class="grid grid-cols-3 gap-2">' + Object.keys(PLATFORMS).map(function (k) {
@@ -3091,6 +3129,8 @@
     bind('#tgVib', function () { prefs.novib = !prefs.novib; store.set('novib', prefs.novib); if (!prefs.novib) vibrate(60); openSettings(); });
     bind('#tgAnim', function () { prefs.noanim = !prefs.noanim; store.set('noanim', prefs.noanim); applyPrefs(); if (!prefs.noanim) confetti(50); openSettings(); });
     bind('#tgDeezer', function () { prefs.deezer = !prefs.deezer; store.set('deezer', prefs.deezer); openSettings(); });
+    bind('#srcDeezer', function () { prefs.previewSrc = 'deezer'; store.set('previewSrc', 'deezer'); openSettings(); });
+    bind('#srcItunes', function () { prefs.previewSrc = 'itunes'; store.set('previewSrc', 'itunes'); openSettings(); });
     bind('#tgEco', function () { prefs.eco = !prefs.eco; store.set('eco', prefs.eco); store.set('ecoSet', true); applyPrefs(); openSettings(); });
     Array.prototype.forEach.call(settingsEl.querySelectorAll('.platBtn'), function (b) {
       b.onclick = function () { prefs.platform = b.getAttribute('data-plat'); store.set('platform', prefs.platform); openSettings(); };

@@ -1219,14 +1219,14 @@
       '  <div id="goalBox" class="flex items-center gap-2 mb-5 text-sm text-white/60" style="display:none"><span id="goalLbl">Objectif :</span><input id="goalVal" type="number" min="1" max="999" value="50" class="w-20 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
       '  <p id="goalHint" class="text-white/40 text-xs mb-5">Partie <b>libre</b> : tu décides quand terminer (bouton « Terminer »).</p>',
 
-      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
-      '  <div class="grid grid-cols-4 gap-2 mb-2">',
+      '  <p id="suDjTitle" class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
+      '  <div id="suDjBox" class="grid grid-cols-4 gap-2 mb-2">',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-dj="0">Off (moi seul)</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="3">Tous les 3</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="5">Tous les 5</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="10">Tous les 10</button>',
       '  </div>',
-      '  <p class="text-white/40 text-xs mb-5">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).</p>',
+      '  <p id="suDjNote" class="text-white/40 text-xs mb-5">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).</p>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Que doit-on trouver ?</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
@@ -1426,12 +1426,24 @@
         (best || tous[0]).click();
       }
       var STYLES = {
-        tournoi:  function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
-        aveugle:  function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); },
-        duel:     function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); },
-        anim:     function () { press('#suHostPlays', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
-        surprise: function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); }
+        tournoi:  function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(1); },
+        aveugle:  function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); syncDjUI(0); },
+        duel:     function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
+        anim:     function () { press('#suHostPlays', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
+        surprise: function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); syncDjUI(1); }
       };
+      /* Le bloc « rotation » n'a de sens que dans les styles qui font tourner le DJ.
+         Ailleurs on le masque ; en tournoi on retire « moi seul » (contradictoire). */
+      function syncDjUI(avecRotation) {
+        var box = document.getElementById('suDjBox'), tit = document.getElementById('suDjTitle');
+        var off = document.querySelector('.suDj[data-dj="0"]');
+        if (box) box.style.display = avecRotation ? '' : 'none';
+        if (tit) { tit.style.display = avecRotation ? '' : 'none'; tit.textContent = '🎧 Titres par DJ avant de passer la main'; }
+        if (off) off.style.display = avecRotation ? 'none' : '';
+        if (box) box.className = 'grid ' + (avecRotation ? 'grid-cols-3' : 'grid-cols-4') + ' gap-2 mb-2';
+        var note = document.getElementById('suDjNote');
+        if (note) note.style.display = avecRotation ? '' : 'none';
+      }
       function applyStyle(b, silencieux) {
         Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (x) {
           x.className = x.className.replace('bg-gradient-to-r from-neon-pink to-neon-violet text-white', 'bg-black/30 text-white/70');
@@ -2272,6 +2284,13 @@
           ? '<button id="audioToggle" class="w-full py-2.5 rounded-xl text-sm font-bold mb-3 ' + (plays ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '">'
             + (plays ? '📱 Musique jouée par l\'app' : '🔊 Son depuis une source à part') + ' · changer</button>'
           : '';
+        // Playlist et filtres n'ont de sens que si l'APP joue la musique.
+        // Avec une source externe, c'est la personne au téléphone-source qui choisit.
+        if (!plays) {
+          dzBar += '<div class="glass rounded-2xl p-3 mb-3 text-center">'
+            + '<div class="text-xs font-bold uppercase text-white/50">🔊 Son depuis une source à part</div>'
+            + '<p class="text-white/45 text-xs mt-1">Lance le morceau depuis ' + esc(platform().name) + '. Ici, tu enregistres seulement le titre pour la révélation et la correction.</p></div>';
+        } else {
         // Playlist automatique : l'app enchaîne les morceaux toute seule.
         var nbArts = (currentArtists() || []).length;
         var chip = function (cls, val, txt, on) {
@@ -2314,6 +2333,7 @@
             + '<span>' + playedIds.length + ' joué(s)</span>'
             + '<button id="plOff" class="ml-auto underline">changer de playlist</button></div>';
         }
+        } // fin du cas « l'app joue la musique »
         // Si le lecteur intégré est affiché, il tient déjà lieu de carte morceau :
         // on n'affiche pas deux fois le même titre (et on ne le dévoile pas).
         dzBar += (canPlayInApp() && roundTrack) ? '' : '<div class="glass rounded-2xl p-3 mb-4">' + (roundTrack

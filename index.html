@@ -1085,8 +1085,8 @@
 
     $('#goHost').onclick = function () { go('new'); };
     bind('#installApp', function () {
-      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
-      else toast('Menu du navigateur → « Ajouter à l\'écran d\'accueil » pour le plein écran', 'info');
+      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; return; }
+      openInstallHelp();
     });
     bind('#scanBtn', openScanner);
     bind('#resumeJoin', function () { if (lj) { beep(660, 0.1, 'sine'); startPlayer(lj.code, lj.name); } });
@@ -3580,8 +3580,10 @@
 
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Application</p>',
       '  <div class="grid grid-cols-2 gap-2">',
-           (deferredPrompt ? '<button id="setInstall" class="btn-glow-cyan py-3 rounded-xl bg-neon-cyan text-black font-extrabold text-sm">📲 Installer l\'app</button>' : ''),
-      '    <button id="setFs" class="py-3 rounded-xl glass font-bold text-sm ' + (deferredPrompt ? '' : 'col-span-2') + '">⛶ Plein écran</button>',
+      // Toujours proposé : si le navigateur ne gère pas l'installation directe
+      // (iPhone notamment), on explique la marche à suivre.
+      '    <button id="setInstall" class="btn-glow-cyan py-3 rounded-xl bg-neon-cyan text-black font-extrabold text-sm">📲 Installer l\'app</button>',
+      '    <button id="setFs" class="py-3 rounded-xl glass font-bold text-sm">⛶ Plein écran</button>',
       '  </div>',
 
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Aide</p>',
@@ -3633,11 +3635,58 @@
       b.onclick = function () { prefs.platform = b.getAttribute('data-plat'); store.set('platform', prefs.platform); openSettings(); };
     });
 
-    bind('#setInstall', function () { if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); } });
+    bind('#setInstall', function () {
+      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; closeSettings(); return; }
+      openInstallHelp();
+    });
     bind('#setFs', function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
     bind('#setFeedback', openFeedback);
     bind('#setHistory', openHistory);
     bind('#setHelp', openHelp);
+  }
+
+  /* Comment installer l'app quand le navigateur ne le propose pas tout seul
+     (cas d'iPhone/Safari, ou d'un Chrome qui n'a pas encore émis l'invitation). */
+  function openInstallHelp() {
+    if (!settingsEl) return;
+    var ua = navigator.userAgent || '';
+    var iOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var android = /Android/i.test(ua);
+    var deja = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+    var etape = function (n, t) { return '<div class="flex gap-3 mb-2"><span class="w-6 h-6 rounded-full bg-neon-cyan text-black font-extrabold text-sm flex items-center justify-center shrink-0">' + n + '</span><div class="text-white/75 text-sm">' + t + '</div></div>'; };
+    var pas;
+    if (deja) {
+      pas = '<p class="text-neon-lime font-bold text-center py-4">✓ L\'application est déjà installée sur cet appareil.</p>';
+    } else if (iOS) {
+      pas = etape(1, 'Ouvre cette page dans <b>Safari</b> (l\'installation ne marche pas depuis Chrome sur iPhone).')
+          + etape(2, 'Appuie sur le bouton <b>Partager</b> <span class="text-neon-cyan">⬆️</span> en bas de l\'écran.')
+          + etape(3, 'Fais défiler et choisis <b>« Sur l\'écran d\'accueil »</b>.')
+          + etape(4, 'Valide avec <b>Ajouter</b> : l\'icône cassette apparaît sur ton écran.');
+    } else if (android) {
+      pas = etape(1, 'Appuie sur le menu <b>⋮</b> en haut à droite du navigateur.')
+          + etape(2, 'Choisis <b>« Installer l\'application »</b> (ou « Ajouter à l\'écran d\'accueil »).')
+          + etape(3, 'Valide : l\'icône cassette apparaît sur ton écran.');
+    } else {
+      pas = etape(1, 'Dans la barre d\'adresse, cherche l\'icône <b>⊕ / installation</b> à droite.')
+          + etape(2, 'Ou menu <b>⋮</b> → <b>« Installer Blind Test »</b>.');
+    }
+    settingsEl.innerHTML = [
+      '<div class="set-panel p-5 animate-slidein">',
+      '  <div class="flex items-center justify-between mb-3">',
+      '    <button id="inBack" class="text-white/60 text-sm">← Retour</button>',
+      '    <h2 class="bt-title text-lg font-extrabold glow-cyan">INSTALLER</h2>',
+      '    <button id="inClose" class="w-9 h-9 rounded-full glass text-lg">✕</button>',
+      '  </div>',
+      '  <p class="text-white/55 text-sm mb-4">Installée, l\'app s\'ouvre <b>en plein écran</b> (sans barre d\'adresse), démarre plus vite et reste stable pendant les parties.</p>',
+      '  <div class="glass rounded-2xl p-4 mb-3">' + pas + '</div>',
+      '  <button id="inDone" class="btn-glow w-full py-3.5 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">C\'est fait 👍</button>',
+      '</div>'
+    ].join('');
+    settingsEl.classList.remove('hidden');
+    settingsEl.onclick = function (e) { if (e.target === settingsEl) closeSettings(); };
+    bind('#inBack', openSettings);
+    bind('#inClose', closeSettings);
+    bind('#inDone', closeSettings);
   }
 
   /* Règles du jeu — évite que les joueurs restent bloqués sans savoir quoi faire. */

@@ -1124,6 +1124,11 @@
       '    class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg outline-none focus:ring-2 ring-neon-pink mb-6" />',
 
       // Styles de partie : un clic prépare tous les réglages d'un coup.
+      // Le créateur est un joueur par défaut : il apparaît dans le salon et marque des points.
+      '  <button type="button" id="suHostPlays" class="w-full p-3 rounded-xl text-left bg-gradient-to-r from-neon-pink to-neon-violet text-white mb-5">',
+      '    <div class="font-extrabold">🙋 Je joue aussi — <span id="suHostPlaysState">OUI</span></div>',
+      '    <div class="text-xs opacity-80">Tu apparais dans le salon et tu marques des points, sauf sur les titres que tu choisis toi-même.</div></button>',
+
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎬 Style de partie</p>',
       '  <div class="grid grid-cols-1 gap-2 mb-2">',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="tournoi">',
@@ -1273,6 +1278,15 @@
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
     var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10, setupBlindFinal = 0, setupBlindPlay = 'buzz';
+    var setupHostPlays = 1;
+    (function () {
+      var hb = document.getElementById('suHostPlays');
+      if (hb) hb.onclick = function () {
+        setupHostPlays = setupHostPlays ? 0 : 1;
+        hb.className = 'w-full p-3 rounded-xl text-left mb-5 ' + (setupHostPlays ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/60');
+        var st = document.getElementById('suHostPlaysState'); if (st) st.textContent = setupHostPlays ? 'OUI' : 'NON';
+      };
+    })();
     (function () {
       Array.prototype.forEach.call(document.querySelectorAll('.suBlindPlay'), function (b) {
         b.onclick = function () {
@@ -1390,7 +1404,9 @@
     (function () {
       function press(sel, wanted) { // bascule un interrupteur seulement si besoin
         var el = document.querySelector(sel); if (!el) return;
-        if (wanted !== null && ((wanted && el.textContent.indexOf('ON') >= 0) || (!wanted && el.textContent.indexOf('OFF') >= 0))) return;
+        // On lit l'état sur l'apparence (fiable quel que soit le libellé ON/OFF ou OUI/NON)
+        var actif = el.className.indexOf('from-neon-pink') >= 0;
+        if (!!wanted === actif) return;
         el.click();
       }
       function choose(cls, attr, valeur) {
@@ -1410,11 +1426,11 @@
         (best || tous[0]).click();
       }
       var STYLES = {
-        tournoi:  function () { choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
-        aveugle:  function () { press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); },
-        duel:     function () { press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); },
-        anim:     function () { choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
-        surprise: function () { choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); }
+        tournoi:  function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
+        aveugle:  function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); },
+        duel:     function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); },
+        anim:     function () { press('#suHostPlays', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
+        surprise: function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); }
       };
       function applyStyle(b, silencieux) {
         Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (x) {
@@ -1453,6 +1469,7 @@
         st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.blindFinal = setupBlindFinal;
+        st.hostPlays = setupHostPlays;
         st.goal = setupGoal;
         st.goalVal = Math.max(1, val('#goalVal', setupGoal === 'score' ? 50 : 20));
         st.fredEvery = Math.max(1, val('#fredEvery', 10));
@@ -1494,7 +1511,7 @@
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
       wheel: 0, challenge: null, mult: 1, audioMode: 'device', blind: 0,
-      blindFinal: 0, blindRound: 0,
+      blindFinal: 0, blindRound: 0, hostPlays: 1,
       players: {},   // id -> { id, name, score, team }
       history: []
     };
@@ -1687,9 +1704,10 @@
       }
     }
 
-    /* L'hôte fait partie des joueurs dès qu'il y a rotation DJ ou mode Fredonne :
-       il joue comme les autres, sauf sur les manches où c'est lui le DJ / le fredonneur. */
-    if (state.djRotate || state.mode === 'fredonne' || state.blind) ensurePlayer(ME, state.hostName);
+    /* Le créateur est un joueur à part entière (réglage « Je joue aussi », activé
+       par défaut) : il apparaît donc dans le salon dès la création de la partie.
+       Il ne marque simplement pas de points sur les titres qu'il choisit lui-même. */
+    if (state.hostPlays !== 0) ensurePlayer(ME, state.hostName);
 
     var chan = openChannel(code, { id: ME, name: state.hostName, role: 'host' }, {
       onIntent: onIntent,
@@ -1804,6 +1822,7 @@
        - partie ou manche à l'aveugle (c'est l'app qui a choisi le morceau)
        - rotation DJ quand un autre joueur est aux commandes */
     function hostCanPlay() {
+      if (state.hostPlays === 0) return false;            // il a choisi de ne pas jouer
       if (state.mode === 'fredonne') return !state.source || state.source.id !== ME;
       if (state.blind || state.blindRound) return true;
       if (state.djRotate && state.dj && state.dj.id !== ME) return true;

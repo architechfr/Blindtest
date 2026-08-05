@@ -1226,7 +1226,12 @@
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="5">Tous les 5</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="10">Tous les 10</button>',
       '  </div>',
-      '  <p id="suDjNote" class="text-white/40 text-xs mb-5">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).</p>',
+      '  <p id="suDjNote" class="text-white/40 text-xs mb-2">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là). <b>La partie dure un tour complet</b> : par exemple 3 titres × 4 joueurs = 12 manches.</p>',
+      '  <div id="suFinalBox" class="mb-5"><p class="text-xs font-bold uppercase text-white/50 mb-2">🕶️ Manches à l\'aveugle en fin de tour</p>',
+      '  <div class="grid grid-cols-4 gap-2">' + [0, 3, 5, 10].map(function (n) {
+           return '<button type="button" class="suFinalN py-2.5 rounded-xl text-sm font-bold ' + (n === 3 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-n="' + n + '">' + (n === 0 ? 'Aucune' : n) + '</button>';
+         }).join('') + '</div>',
+      '  <p class="text-white/40 text-xs mt-2">Quand tout le monde est passé DJ, on ajoute ces manches où <b>personne ne connaît la réponse</b>. Puis la partie se termine.</p></div>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Que doit-on trouver ?</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
@@ -1278,7 +1283,18 @@
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
     var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10, setupBlindFinal = 0, setupBlindPlay = 'buzz';
-    var setupHostPlays = 1;
+    var setupHostPlays = 1, setupFinalN = 3;
+    (function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.suFinalN'), function (b) {
+        b.onclick = function () {
+          setupFinalN = parseInt(b.getAttribute('data-n'), 10) || 0;
+          Array.prototype.forEach.call(document.querySelectorAll('.suFinalN'), function (x) {
+            x.className = x.className.replace('bg-neon-cyan text-black', 'bg-black/30 text-white/70');
+          });
+          b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-cyan text-black');
+        };
+      });
+    })();
     (function () {
       var hb = document.getElementById('suHostPlays');
       if (hb) hb.onclick = function () {
@@ -1482,6 +1498,7 @@
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.blindFinal = setupBlindFinal;
         st.hostPlays = setupHostPlays;
+        st.finalN = setupFinalN;   // manches à l'aveugle ajoutées en fin de tour
         st.goal = setupGoal;
         st.goalVal = Math.max(1, val('#goalVal', setupGoal === 'score' ? 50 : 20));
         st.fredEvery = Math.max(1, val('#fredEvery', 10));
@@ -1697,6 +1714,20 @@
           state.grades[p.target] = p.g;
           publish();
         }
+      } else if (p.action === 'forceJudge') {
+        // Réponse donnée à l'oral : le DJ passe directement au jugement.
+        if (state.dj && state.dj.id === p.id && state.phase === 'answering') {
+          state.answer = null; state.suggest = null;
+          state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
+          state.voteAt = Date.now();
+          publish();
+        }
+      } else if (p.action === 'nextRound') {
+        // Le DJ de la série enchaîne lui-même sur le titre suivant.
+        if (state.dj && state.dj.id === p.id && (state.phase === 'reveal' || state.phase === 'turbo_reveal' || state.phase === 'year_reveal')) {
+          if (p.reveal && p.reveal.title) roundTrack = p.reveal;
+          launchRound();
+        }
       } else if (p.action === 'closeRace') {
         if (state.phase === 'racing' && state.dj && state.dj.id === p.id) closeRacing();
       } else if (p.action === 'applyTurbo') {
@@ -1773,15 +1804,17 @@
       state.blindRound = 0;
       var nbDj = rotationArr().length;
       var tourComplet = nbDj > 0 && ((state._djIdx + 1) % nbDj === 0); // tous les DJ sont passés
-      if (state.djRotate && state.blindFinal && state.djCount > 0
+      var nFinal = (state.finalN != null ? state.finalN : (state.blindFinal ? 1 : 0));
+      if (state.djRotate && nFinal > 0 && state.djCount > 0
           && (state.djCount % (state.djEvery || 5) === 0)
           && tourComplet
-          && state._lastBlind !== state.djCount) {   // une seule fois par tour complet
+          && (state._blindDone || 0) < nFinal) {     // série de manches à l'aveugle
         state.blindRound = 1;
-        state.dj = null;              // aucun DJ sur cette manche
-        state.mode = 'turbo';         // tout le monde répond
+        state.dj = null;              // aucun DJ sur ces manches
         state.source = null;
-        state._lastBlind = state.djCount; // ne consomme AUCUN titre du cycle
+        state._blindDone = (state._blindDone || 0) + 1;
+        // Le tour complet + ses manches à l'aveugle = fin de la partie.
+        if (state._blindDone >= nFinal) state._finTour = 1;
       }
       if (state.djRotate && !state.blindRound) {
         var dids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
@@ -2900,6 +2933,38 @@
                   + '</div></div>';
               }).join('') : '<p class="text-white/40 text-center py-3">Personne n\'a répondu.</p>')
             + '<button id="djApply" class="mt-2 w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Attribuer les points 🏅</button></div>';
+        } else if (s.phase === 'armed' || s.phase === 'buzzing') {
+          // Le DJ suit sa manche : morceau lancé, buzz ouvert, personne n'a encore répondu.
+          center = '<div class="w-full animate-slidein">' + djHdr + djTrackBox
+            + '<div class="glass rounded-2xl p-6 text-center">'
+            + '<div class="text-5xl mb-2 ' + (s.phase === 'buzzing' ? 'animate-pulse' : '') + '">' + (s.phase === 'buzzing' ? '🔔' : '⏳') + '</div>'
+            + '<p class="text-2xl font-extrabold ' + (s.phase === 'buzzing' ? 'text-neon-lime' : 'text-white/70') + '">' + (s.phase === 'buzzing' ? 'BUZZ OUVERT' : 'Buzz verrouillé…') + '</p>'
+            + '<p class="text-white/50 text-sm mt-1">' + (s.phase === 'buzzing' ? 'En attente du premier buzz…' : 'Lance ton morceau maintenant !') + '</p>'
+            + '</div></div>';
+        } else if (s.phase === 'answering') {
+          // C'ÉTAIT LE MANQUE : le DJ doit voir qui a buzzé.
+          center = '<div class="w-full animate-slidein">' + djHdr
+            + '<div class="glass rounded-2xl p-6 text-center">'
+            + '<p class="text-white/50 uppercase text-xs mb-1">A buzzé en premier</p>'
+            + '<div class="text-3xl font-extrabold text-neon-pink text-glow mb-1">' + esc(s.buzzer ? s.buzzer.name : '') + '</div>'
+            + (s.buzzMs != null ? '<p class="text-neon-cyan text-sm font-bold">⏱️ ' + (s.buzzMs / 1000).toFixed(1) + 's</p>' : '')
+            + '<p class="text-white/55 mt-2">Il/elle écrit sa réponse…</p>'
+            + '<button id="djForce" class="mt-4 text-sm text-white/50 underline">Réponse donnée à l\'oral → juger maintenant</button>'
+            + '</div></div>';
+        } else if (s.phase === 'reveal' || s.phase === 'turbo_reveal' || s.phase === 'year_reveal') {
+          // Le DJ enchaîne lui-même sur le titre suivant : il reste le patron de sa série.
+          var okR = s.result && s.result.correct;
+          center = '<div class="w-full animate-slidein">' + djHdr
+            + '<div class="glass rounded-2xl p-6 text-center mb-3">'
+            + (s.phase === 'reveal'
+                ? '<div class="text-5xl mb-1">' + (okR ? '✅' : '❌') + '</div>'
+                  + '<p class="text-xl font-extrabold ' + (okR ? 'text-neon-lime' : 'text-rose-400') + '">' + (okR ? 'Bonne réponse !' : 'Raté !') + '</p>'
+                  + '<p class="text-white/55 text-sm">' + esc(s.buzzer ? s.buzzer.name : '') + '</p>'
+                : '<div class="text-4xl mb-1">🏅</div><p class="text-xl font-extrabold">Points attribués</p>')
+            + revealCard(s.reveal)
+            + '</div>'
+            + djTrackBox
+            + '<button id="djNext" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Titre suivant ▶</button></div>';
         } else if (s.phase === 'voting' || s.phase === 'judging') {
           center = '<div class="w-full text-center animate-slidein">' + djHdr
             + '<p class="text-white/50 uppercase text-xs">Réponse de ' + esc(s.buzzer ? s.buzzer.name : '') + (s.buzzMs != null ? ' · ⏱️ ' + (s.buzzMs / 1000).toFixed(1) + 's' : '') + '</p>'
@@ -3100,6 +3165,8 @@
 
       // Au verdict, on joint la fiche du morceau : elle n'a circulé qu'à cet instant.
       var myReveal = function () { return myTrack ? { title: myTrack.title, artist: myTrack.artist, cover: myTrack.cover, year: myTrack.year } : null; };
+      bind('#djNext', function () { dzPause(); chan.sendIntent({ action: 'nextRound', id: ME, reveal: myReveal() }); myTrack = null; });
+      bind('#djForce', function () { chan.sendIntent({ action: 'forceJudge', id: ME }); });
       bind('#djCloseRace', function () { dzPause(); chan.sendIntent({ action: 'closeRace', id: ME }); });
       bind('#djApply', function () { chan.sendIntent({ action: 'applyTurbo', id: ME, reveal: myReveal() }); myTrack = null; });
       bind('#djOk', function () { dzPause(); chan.sendIntent({ action: 'judge', id: ME, correct: true, reveal: myReveal() }); myTrack = null; });
@@ -3255,6 +3322,8 @@
   /* Objectif de fin de partie atteint ? On le SIGNALE sans couper brutalement :
      l'hôte garde la main (et l'avertissement d'équité du cycle DJ s'applique). */
   function goalReached(s) {
+    // Tournoi : le tour complet de DJ + ses manches à l'aveugle valent fin de partie.
+    if (s && s._finTour) return { label: 'Tour complet joué par tous les DJ', done: true };
     if (!s || !s.goal || s.goal === 'none' || !s.goalVal) return null;
     if (s.goal === 'rounds') {
       return s.round >= s.goalVal ? { label: s.goalVal + ' manches jouées', done: true } : null;

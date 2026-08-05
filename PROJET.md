@@ -69,8 +69,10 @@ les joueurs veulent démarrer sans lire.
 `fredonne` (sans musique) · `year` (deviner l'année)
 
 ### Mécaniques
-- **Rotation DJ** — le DJ choisit ses morceaux, les lance, **valide** et **enchaîne**
-  depuis son propre téléphone. Il ne marque pas de points sur sa série.
+- **Rotation DJ** — le DJ choisit ses morceaux, les lance, **valide**, **enchaîne** et
+  peut **terminer la partie** depuis son propre téléphone (intention `endGame`, limitée
+  aux phases de révélation ; le téléphone de l'hôte reste le serveur et exécute).
+  Il ne marque pas de points sur sa série.
 - **Durée du tournoi** = `nb_joueurs × titres_par_DJ + manches_à_l'aveugle`
   (3 joueurs × 5 titres + 5 = **20 manches**). Affiché dans le salon et en cours de partie.
 - **Équité** — `played` / `djTurns` par joueur ; le classement final est **ajusté**
@@ -78,8 +80,15 @@ les joueurs veulent démarrer sans lire.
 - **Combos** (série de bonnes réponses) · **Jokers** (🃏 ×2, 🛡️ bouclier)
 - **Roue des défis** — 10 défis tirés au sort (double points, mort subite, titre seul…)
 - **Barème** : bonne +5 / mauvaise −2 / bon vote +2 / **mauvais vote −1**
+  Les scores ne sont **pas** modifiables à la main : pouvoir les corriger jetait un
+  doute sur tout le classement. La fiche joueur ne permet que renommer / retirer.
 - **Filtres combinables** — 151 artistes étiquetés époque × genre × langue
-  (ex. *90s + Rock + Français*), + 10 playlists prédéfinies
+  (ex. *90s + Rock + Français*), + 10 playlists prédéfinies **cumulables**
+  (Rock + 90s + Disney = union de leurs artistes, sans doublon)
+- **Mémoire musicale persistante** (`bt.musicMemory` en localStorage) — sac
+  d'artistes + morceaux déjà passés, conservés **d'une partie à l'autre et au
+  rechargement**. Avant, tout repartait à zéro à chaque partie et les mêmes
+  artistes revenaient aussitôt. Remise à zéro dans Réglages.
 - **Validation automatique** — `fuzzyHit()` : Levenshtein + nettoyage des mentions
   d'édition + comparaison par mots porteurs. **24/24 sur les cas de test.**
 
@@ -104,6 +113,12 @@ les joueurs veulent démarrer sans lire.
    titre au DJ « par sécurité », alors qu'il en a besoin pour travailler.
 8. **Batterie** — pas d'animation plein écran en boucle ; `backdrop-filter` sur chaque
    carte = très coûteux ; pauser les animations quand l'onglet n'est pas visible.
+9. **Une sélection qui masque ses propres options** — choisir une playlist faisait
+   disparaître la rangée de puces : impossible d'en ajouter une deuxième. Garder les
+   options visibles et cocher celles qui sont actives.
+10. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+   `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
+   écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 
 ---
 
@@ -132,16 +147,37 @@ sont en `'…'`, il faut échapper `\'` — plusieurs erreurs de syntaxe sont ve
 
 ---
 
+## 5 bis. Tester à plusieurs dans un navigateur
+
+Le pane navigateur de l'assistant sait faire tourner une vraie partie :
+
+```bash
+python -m http.server 8777
+```
+
+Puis un onglet par participant. **Piège** : deux onglets sur la même origine
+partagent le `localStorage`, donc le **même identifiant joueur** — le second écrase
+le premier. Utiliser des origines différentes : `localhost:8777` pour l'un,
+`127.0.0.1:8777` pour l'autre.
+
+Deux limites du pane : les captures d'écran échouent s'il n'est pas affiché, et les
+clics ne portent que dans les ~720 premiers pixels (pas de défilement fiable). Pour
+un élément plus bas, déclencher un vrai événement : `el.dispatchEvent(new
+MouseEvent('click', {bubbles:true}))` — c'est bien le gestionnaire de l'app qui
+s'exécute. Penser aussi à neutraliser `window.confirm` (auto-rejeté en automatisation,
+ce qui annule silencieusement l'action testée).
+
+---
+
 ## 6. Ce qui reste ouvert
 
-- **« Terminer la partie » reste chez l'hôte** — son téléphone est le serveur ; le
-  déplacer demanderait de refondre le modèle réseau.
 - **Extraits limités à 30 s** et ne commençant pas au début du morceau. Morceau entier
   = Spotify Premium (KO sur iPhone, plafond 25 utilisateurs), Apple MusicKit (99 €/an)
   ou YouTube (**pubs impossibles à retirer** — écarté d'un commun accord).
-- **Jamais testé en cliquant** par l'assistant (navigateur indisponible) : la plupart
-  des bugs ont été trouvés par l'utilisateur en soirée réelle. **Les retours terrain
-  sont la meilleure source de bugs.**
+- L'assistant peut désormais **jouer une vraie partie dans le navigateur** (voir 5 bis),
+  mais ça ne remplace pas la soirée réelle : la plupart des bugs sérieux ont été
+  trouvés par l'utilisateur en conditions réelles. **Les retours terrain restent la
+  meilleure source de bugs.**
 - Idées en réserve : intro seule, l'intrus, génériques TV, mort subite, stats joueurs,
   i18n anglais.
 

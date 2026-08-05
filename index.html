@@ -632,31 +632,75 @@
     if (initialQuery) { draw(null, initialQuery, true); musicSearch(initialQuery, function (r) { results = r || []; draw(results, initialQuery, false); }); }
   }
 
+  /* ---------------------------------------------------------------
+     MÉMOIRE MUSICALE — elle survit à la fin d'une partie ET au
+     rechargement de l'app. Avant, le sac d'artistes vivait en mémoire
+     et la liste des morceaux joués repartait à zéro à chaque partie :
+     quand on enchaînait deux soirées, les mêmes artistes et les mêmes
+     titres revenaient tout de suite.
+       bags    : ce qu'il reste à tirer par liste d'artistes
+       tracks  : identifiants des morceaux déjà passés
+       artists : artistes récemment passés, du plus ancien au plus récent
+     `store` est défini plus bas dans le fichier : on initialise donc à
+     la première utilisation, jamais au chargement.
+     --------------------------------------------------------------- */
+  var MEM_TRACKS = 400, MEM_ARTISTS = 150;
+  var _mem = null;
+  function mem() {
+    if (!_mem) {
+      var m = store.get('musicMemory', null);
+      _mem = (m && m.bags && m.tracks && m.artists) ? m : { bags: {}, tracks: [], artists: [] };
+    }
+    return _mem;
+  }
+  function memSave() { if (_mem) store.set('musicMemory', _mem); }
+  /* On vide les tableaux SUR PLACE : une partie en cours garde une référence
+     directe vers `tracks` (voir playedIds). Remplacer l'objet la laisserait
+     travailler sur une liste orpheline, plus jamais enregistrée. */
+  function memReset() {
+    var m = mem();
+    m.bags = {}; m.tracks.length = 0; m.artists.length = 0;
+    memSave();
+  }
+
   /* Tirage SANS REMISE des artistes : on mélange la liste et on la consomme
      entièrement avant qu'un artiste puisse revenir. Sans ça, un tirage aléatoire
      indépendant ramenait plusieurs fois le même artiste sur une même partie. */
-  var _bags = {};
   function nextArtist(list) {
+    var m = mem();
     var key = list.length + '|' + list[0] + '|' + list[list.length - 1];
-    var bag = _bags[key];
+    var bag = m.bags[key];
     if (!bag || !bag.length) {
       bag = list.slice();
       for (var i = bag.length - 1; i > 0; i--) {      // mélange de Fisher-Yates
         var j = (Math.random() * (i + 1)) | 0, t = bag[i]; bag[i] = bag[j]; bag[j] = t;
       }
-      _bags[key] = bag;
+      /* Nouveau tour de sac : on repousse en fin de file ceux qui viennent de
+         passer (on tire avec pop(), donc « début du tableau » = tiré en dernier).
+         Sinon un artiste pouvait fermer un tour et rouvrir le suivant. */
+      var recent = m.artists;
+      bag.sort(function (a, b) { return recent.indexOf(b) - recent.indexOf(a); });
+      m.bags[key] = bag;
     }
-    return bag.pop();
+    var pick = bag.pop();
+    m.artists.push(pick);
+    if (m.artists.length > MEM_ARTISTS) m.artists.shift();
+    memSave();
+    return pick;
   }
 
-  /* Tire un morceau de la playlist, en évitant ceux déjà joués. cb(track|null) */
+  /* Tire un morceau de la playlist, en évitant ceux déjà joués. cb(track|null)
+     Au dernier essai on accepte un morceau déjà joué : mieux vaut un titre
+     déjà entendu qu'une manche bloquée faute de nouveauté. */
   function autoPick(pl, usedIds, cb, tries) {
     tries = tries || 0;
-    if (!pl || !pl.artists || !pl.artists.length || tries >= 4) { cb(null); return; }
+    if (!pl || !pl.artists || !pl.artists.length || tries > 4) { cb(null); return; }
+    var dernier = tries === 4;
     var artist = nextArtist(pl.artists);
     musicSearch(artist, function (res) {
       if (!res || !res.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
       var pool = res.filter(function (t) { return t.preview && usedIds.indexOf(t.id) < 0; });
+      if (!pool.length && dernier) pool = res.filter(function (t) { return t.preview; });
       if (!pool.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
       cb(pool[(Math.random() * pool.length) | 0]);
     });
@@ -1310,7 +1354,8 @@
     $('#back').onclick = function () { location.hash = ''; };
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
-    var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10, setupBlindFinal = 0, setupBlindPlay = 'buzz';
+    // Plusieurs playlists peuvent être cochées : on jouera l'union de leurs artistes.
+    var setupBlind = 0, setupBlindPls = ['p80'], setupBlindRounds = 10, setupBlindFinal = 0, setupBlindPlay = 'buzz';
     var setupHostPlays = 1, setupFinalN = 3;
     (function () {
       Array.prototype.forEach.call(document.querySelectorAll('.suFinalN'), function (b) {
@@ -1354,7 +1399,7 @@
       var bb = document.getElementById('suBlind');
       var refreshPl = function () {
         Array.prototype.forEach.call(document.querySelectorAll('.suBlindPl'), function (x) {
-          var on = x.getAttribute('data-pl') === setupBlindPl;
+          var on = setupBlindPls.indexOf(x.getAttribute('data-pl')) >= 0;
           x.className = 'suBlindPl shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ' + (on ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/75');
         });
       };
@@ -1366,7 +1411,13 @@
         refreshPl();
       };
       Array.prototype.forEach.call(document.querySelectorAll('.suBlindPl'), function (b) {
-        b.onclick = function () { setupBlindPl = b.getAttribute('data-pl'); refreshPl(); };
+        b.onclick = function () {
+          // Case à cocher, pas un bouton radio : on peut mélanger 80s + Rock + Disney.
+          var id = b.getAttribute('data-pl'), i = setupBlindPls.indexOf(id);
+          if (i >= 0) { if (setupBlindPls.length > 1) setupBlindPls.splice(i, 1); }  // jamais zéro
+          else setupBlindPls.push(id);
+          refreshPl();
+        };
       });
       refreshPl();
     })();
@@ -1541,7 +1592,7 @@
           st.audioMode = 'device';  // c'est l'app qui joue
           st.goal = 'rounds';
           st.goalVal = Math.min(50, Math.max(3, val('#suBlindRounds', 10)));
-          store.set('autoPlaylist', setupBlindPl); // playlist choisie pour la partie
+          store.set('autoPlaylist', setupBlindPls); // playlist(s) choisie(s) pour la partie
         }
         store.set('hostGame', st);
 
@@ -1584,14 +1635,32 @@
     appAudioMode = state.audioMode || 'device'; // qui produit le son sur cette partie
     blindAudio = !!(state.blind || state.blindRound);
     var roundTrack = null; // morceau Deezer choisi pour la manche (local hôte, jamais diffusé)
-    var autoPl = store.get('autoPlaylist', null); // playlist automatique active (id) ou null
+    /* Playlists automatiques actives. On peut en cocher PLUSIEURS (Années 80 + Rock…) :
+       on joue alors l'union de leurs artistes. L'ancien format enregistré était un
+       identifiant seul — on le relit sans casser les parties déjà configurées. */
+    var autoPls = (function () {
+      var v = store.get('autoPlaylist', null);
+      if (!v) return [];
+      return (Object.prototype.toString.call(v) === '[object Array]') ? v.slice() : [v];
+    })();
+    function plActive() { return autoPls.length > 0; }
+    function savePls() { if (autoPls.length) store.set('autoPlaylist', autoPls); else store.del('autoPlaylist'); }
+    function plNames() {
+      return autoPls.map(function (id) { var p = playlistById(id); return p ? p.icon + ' ' + p.name : null; })
+        .filter(Boolean).join(' + ');
+    }
     var autoF = store.get('autoFilters', { d: [], g: [], l: [] }); // filtres combinés (décennie/genre/langue)
     function fActive() { return (autoF.d.length + autoF.g.length + autoF.l.length) > 0; }
     /* Liste d'artistes à utiliser : les filtres priment sur la playlist. */
     function currentArtists() {
       if (fActive()) return filterArtists(autoF.d, autoF.g, autoF.l);
-      var pl = autoPl ? playlistById(autoPl) : null;
-      return pl ? pl.artists : null;
+      // Union des playlists cochées, sans doublon (Queen est dans 80s ET dans Rock).
+      var seen = {}, out = [];
+      autoPls.forEach(function (id) {
+        var p = playlistById(id); if (!p) return;
+        p.artists.forEach(function (a) { if (!seen[a]) { seen[a] = 1; out.push(a); } });
+      });
+      return out.length ? out : null;
     }
     function fSummary() {
       var p = [];
@@ -1600,7 +1669,11 @@
       if (autoF.l.length) p.push(autoF.l.map(function (l) { return l === 'fr' ? 'Français' : 'International'; }).join('/'));
       return p.join(' · ');
     }
-    var playedIds = [];                            // morceaux déjà passés, pour ne pas les répéter
+    /* Morceaux déjà passés : la liste est PARTAGÉE avec les parties précédentes
+       (mémoire persistante), sinon on rejouait les mêmes titres d'une soirée à
+       l'autre. Le compteur affiché, lui, ne compte que la partie en cours. */
+    var playedIds = mem().tracks;
+    var playedNow = 0;
     var autoLoading = false;
 
     /* Précharge le morceau suivant de la playlist pour qu'il soit prêt
@@ -1614,8 +1687,9 @@
       autoPick(pl, playedIds, function (t) {
         autoLoading = false;
         if (!t) { toast('Playlist : aucun morceau trouvé, réessaie', 'err'); return; }
-        playedIds.push(t.id);
-        if (playedIds.length > 200) playedIds.shift();
+        playedIds.push(t.id); playedNow++;
+        if (playedIds.length > MEM_TRACKS) playedIds.shift();
+        memSave();
         roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, auto: true };
         fillYear(t, roundTrack, renderHost);
         // Le morceau arrive après coup : si la manche est déjà lancée, on le joue.
@@ -1761,6 +1835,14 @@
           if (p.reveal && p.reveal.title) roundTrack = p.reveal;
           launchRound();
         }
+      } else if (p.action === 'endGame') {
+        // Le DJ de la série clôt la partie depuis son téléphone. Le téléphone de l'hôte
+        // reste le serveur : il se contente d'exécuter l'intention, comme pour 'nextRound'.
+        // Limité aux phases de révélation pour ne jamais tuer une manche en cours.
+        if (state.dj && state.dj.id === p.id &&
+            (state.phase === 'reveal' || state.phase === 'turbo_reveal' || state.phase === 'year_reveal')) {
+          endGame();
+        }
       } else if (p.action === 'closeRace') {
         if (state.phase === 'racing' && state.dj && state.dj.id === p.id) closeRacing();
       } else if (p.action === 'applyTurbo') {
@@ -1865,7 +1947,7 @@
       if (state.blindRound) {
         syncBlindAudio();
         dzPause(); roundTrack = null;                 // le morceau du DJ précédent ne vaut plus
-        if (!autoPl && !fActive()) { autoPl = 'p80'; store.set('autoPlaylist', autoPl); }
+        if (!plActive() && !fActive()) { autoPls = ['p80']; savePls(); }
         prefetchAuto();
       }
 
@@ -2248,15 +2330,12 @@
         '  <div class="flex items-center gap-3 mb-4"><span class="w-12 h-12 rounded-full flex items-center justify-center font-extrabold" style="background:' + avatarGrad(p.name) + '">' + esc(initials(p.name)) + '</span>',
         '    <div class="flex-1 min-w-0"><input id="paName" value="' + esc(p.name) + '" maxlength="20" class="w-full bg-black/40 rounded-lg px-3 py-2 font-bold outline-none focus:ring-2 ring-neon-cyan" />',
         '    <div class="text-white/40 text-xs mt-1">' + (p.played || 0) + ' titre(s) jouable(s) · ' + (p.djTurns || 0) + ' en DJ</div></div></div>',
+        /* Le score n'est PAS modifiable à la main : il n'appartient qu'au jeu.
+           Pouvoir le corriger jetait un doute sur tout le classement. */
         '  <div class="glass rounded-2xl p-4 text-center mb-4">',
         '    <div class="text-white/50 text-xs uppercase font-bold mb-1">Score</div>',
-        '    <div class="text-5xl font-extrabold text-neon-gold mb-3">' + p.score + '</div>',
-        '    <div class="grid grid-cols-4 gap-2">',
-        '      <button class="paAdj py-3 rounded-xl bg-rose-500/80 font-extrabold" data-d="-5">−5</button>',
-        '      <button class="paAdj py-3 rounded-xl bg-rose-500/60 font-extrabold" data-d="-1">−1</button>',
-        '      <button class="paAdj py-3 rounded-xl bg-neon-lime/70 text-black font-extrabold" data-d="1">+1</button>',
-        '      <button class="paAdj py-3 rounded-xl bg-neon-lime text-black font-extrabold" data-d="5">+5</button>',
-        '    </div>',
+        '    <div class="text-5xl font-extrabold text-neon-gold">' + p.score + '</div>',
+        '    <div class="text-white/35 text-xs mt-2">Marqué en jeu — non modifiable</div>',
         '  </div>',
         '  <div class="grid grid-cols-2 gap-2">',
         '    <button id="paSave" class="py-3 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">Enregistrer</button>',
@@ -2267,12 +2346,6 @@
       el.classList.remove('hidden');
       el.onclick = function (e) { if (e.target === el) closePicker(); };
       bind('#paClose', closePicker);
-      Array.prototype.forEach.call(el.querySelectorAll('.paAdj'), function (b) {
-        b.onclick = function () {
-          p.score += parseInt(b.getAttribute('data-d'), 10) || 0;
-          beep(660, 0.05, 'sine'); publish(); openPlayerAdmin(pid);
-        };
-      });
       bind('#paSave', function () {
         var v = ($('#paName') || {}).value;
         if (v && v.trim()) p.name = v.trim().slice(0, 20);
@@ -2359,13 +2432,13 @@
       var dzBar = '';
       if (deezerOn && showTrackUI) {
         var plays = canPlayInApp();
-        var curPl = autoPl ? playlistById(autoPl) : null;
+        var plOn = plActive(), plLabel = plNames();
         // D'où sort la musique (modifiable en pleine partie)
         // En partie à l'aveugle, l'app gère tout : ni sélection ni playlist à proposer.
         if (s.blind) {
           dzBar = '<div class="glass rounded-2xl p-3 mb-3 text-center">'
             + '<div class="text-xs font-bold uppercase text-white/50">🕶️ Partie à l\'aveugle</div>'
-            + '<div class="font-extrabold mt-0.5">' + (curPl ? curPl.icon + ' ' + esc(curPl.name) : 'Playlist') + ' · manche ' + Math.max(1, s.round) + '/' + (s.goalVal || 10) + '</div>'
+            + '<div class="font-extrabold mt-0.5">' + (plOn ? esc(plLabel) : 'Playlist') + ' · manche ' + Math.max(1, s.round) + '/' + (s.goalVal || 10) + '</div>'
             + '<div class="text-white/45 text-xs mt-1">Personne ne connaît la réponse — l\'app choisit, joue et corrige.</div></div>';
         } else {
         // Le choix de la source sonore ne sert qu'au réglage : discret hors du salon.
@@ -2387,19 +2460,23 @@
         };
         dzBar += '<div class="glass rounded-2xl p-3 mb-3">'
           + '<div class="flex items-center justify-between mb-2"><span class="text-xs font-bold uppercase text-white/50">📻 Choix des morceaux</span>'
-          + ((curPl || fActive()) ? '<button id="plOff" class="text-xs text-white/40 underline">tout effacer</button>' : '') + '</div>'
+          + ((plOn || fActive()) ? '<button id="plOff" class="text-xs text-white/40 underline">tout effacer</button>' : '') + '</div>'
           + (fActive()
               // Filtres combinés actifs : on affiche le résumé
               ? '<div class="flex items-center gap-2 flex-wrap"><span class="px-3 py-1.5 rounded-full bg-neon-violet text-white text-sm font-bold">🎛️ ' + esc(fSummary()) + '</span>'
-                + '<span class="text-white/40 text-xs">' + nbArts + ' artistes · ' + playedIds.length + ' joué(s)</span>'
+                + '<span class="text-white/40 text-xs">' + nbArts + ' artistes · ' + playedNow + ' joué(s)</span>'
                 + '<button id="plSkip" class="ml-auto px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
-              : curPl
-                ? '<div class="flex items-center gap-2"><span class="px-3 py-1.5 rounded-full bg-neon-violet text-white text-sm font-bold">' + curPl.icon + ' ' + esc(curPl.name) + '</span>'
-                  + '<span class="text-white/40 text-xs flex-1">' + playedIds.length + ' morceau(x) joué(s)</span>'
-                  + '<button id="plSkip" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
-                : '<div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
-                    return '<button class="plChip shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
-                  }).join('') + '</div>')
+              /* Les puces restent TOUJOURS affichées, cochables comme des cases :
+                 avant, choisir une playlist les faisait disparaître — impossible
+                 d'en ajouter une deuxième. */
+              : '<div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
+                  var on = autoPls.indexOf(p.id) >= 0;
+                  return '<button class="plChip shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ' + (on ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/75') + '" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
+                }).join('') + '</div>'
+                + (plOn
+                    ? '<div class="flex items-center gap-2 mt-2"><span class="text-white/40 text-xs flex-1">' + nbArts + ' artistes · ' + playedNow + ' morceau(x) joué(s)</span>'
+                      + '<button id="plSkip" class="px-3 py-1.5 rounded-lg glass text-xs font-bold">↻ Autre</button></div>'
+                    : '<p class="text-white/40 text-xs mt-1">Tu peux en cocher <b>plusieurs</b> — les artistes se mélangent.</p>'))
           // Filtres combinables : on croise époque, genre et langue.
           + '<details class="mt-2"' + (fActive() ? ' open' : '') + '>'
           + '<summary class="text-xs font-bold text-neon-cyan cursor-pointer">🎛️ Combiner époque · genre · langue</summary>'
@@ -2417,9 +2494,9 @@
           + '</p></div></details>'
           + '</div>';
         // Entre deux manches, la playlist active tient en une ligne discrète.
-        if (curPl && s.phase !== 'lobby') {
-          dzBar = '<div class="flex items-center gap-2 mb-3 text-xs text-white/45"><span class="px-2.5 py-1 rounded-full bg-neon-violet/30 font-bold text-white/80">' + curPl.icon + ' ' + esc(curPl.name) + '</span>'
-            + '<span>' + playedIds.length + ' joué(s)</span>'
+        if (plOn && s.phase !== 'lobby') {
+          dzBar = '<div class="flex items-center gap-2 mb-3 text-xs text-white/45"><span class="px-2.5 py-1 rounded-full bg-neon-violet/30 font-bold text-white/80">' + esc(plLabel) + '</span>'
+            + '<span>' + playedNow + ' joué(s)</span>'
             + '<button id="plOff" class="ml-auto underline">changer de playlist</button></div>';
         }
         } // fin du cas « l'app joue la musique »
@@ -2718,7 +2795,7 @@
         dzCtrl,
         '  <div class="mb-5">' + phaseBlock + '</div>',
         '  <div id="lbCapture" class="glass rounded-2xl p-5 flex-1">',
-        '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/35">✏️ tape un joueur pour corriger</span></div>',
+        '    <div class="flex items-center justify-between mb-3"><p class="font-extrabold uppercase text-white/60 text-sm">Classement</p><span class="text-xs text-white/35">✏️ tape un joueur pour le renommer</span></div>',
              (s.teams ? renderTeams(s) : ''),
              renderLeaderboard(lb, present, null, fairArg),
              (fairArg ? '<p class="text-white/45 text-xs mt-3 text-center">⚖️ Classement <b>équitable</b> : les scores sont ramenés au même nombre de titres jouables (chacun n\'a pas été DJ le même nombre de fois).</p>' : ''),
@@ -2789,13 +2866,16 @@
       // Playlists automatiques
       Array.prototype.forEach.call(document.querySelectorAll('.plChip'), function (b) {
         b.onclick = function () {
-          autoPl = b.getAttribute('data-pl'); store.set('autoPlaylist', autoPl);
+          // Chaque puce s'ajoute ou se retire : on peut jouer 80s + Rock + Disney ensemble.
+          var id = b.getAttribute('data-pl'), i = autoPls.indexOf(id);
+          if (i >= 0) autoPls.splice(i, 1); else autoPls.push(id);
+          savePls();
           roundTrack = null; prefetchAuto(); renderHost();
-          toast('Playlist activée 📻', 'ok');
+          toast(autoPls.length ? '📻 ' + plNames() : 'Playlists effacées', autoPls.length ? 'ok' : 'info');
         };
       });
       bind('#plOff', function () {
-        autoPl = null; store.del('autoPlaylist');
+        autoPls = []; savePls();
         autoF = { d: [], g: [], l: [] }; store.set('autoFilters', autoF);
         renderHost();
       });
@@ -2807,7 +2887,7 @@
           b.onclick = function () {
             toggleF(autoF[key], cast(b.getAttribute('data-v')));
             store.set('autoFilters', autoF);
-            autoPl = null; store.del('autoPlaylist'); // les filtres remplacent la playlist
+            autoPls = []; savePls(); // les filtres remplacent les playlists
             roundTrack = null; prefetchAuto();
             renderHost();
           };
@@ -2817,9 +2897,9 @@
       bindF('fGen', 'g', function (v) { return v; });
       bindF('fLang', 'l', function (v) { return v; });
       // Prépare le morceau suivant dès qu'on est en attente de lancement
-      if ((autoPl || fActive()) && !roundTrack && prepPhase) prefetchAuto();
+      if ((plActive() || fActive()) && !roundTrack && prepPhase) prefetchAuto();
       if (roundTrack && canPlayInApp() && (!s.dj || s.dj.id === ME)) bindPlayer(roundTrack, renderHost);
-      bind('#plyChange', function () { dzPause(); roundTrack = null; if (autoPl) prefetchAuto(); renderHost(); });
+      bind('#plyChange', function () { dzPause(); roundTrack = null; if (plActive() || fActive()) prefetchAuto(); renderHost(); });
       bind('#plySearch', function () { dzPause(); openMusicPicker(); });
       bind('#audioToggle', function () {
         s.audioMode = (s.audioMode || 'device') === 'device' ? 'external' : 'device';
@@ -3035,7 +3115,8 @@
             + revealCard(s.reveal)
             + '</div>'
             + djTrackBox
-            + '<button id="djNext" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Titre suivant ▶</button></div>';
+            + '<button id="djNext" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Titre suivant ▶</button>'
+            + '<button id="djEnd" class="w-full mt-3 py-3 text-white/40 text-sm underline">Terminer la partie 🏁</button></div>';
         } else if (s.phase === 'voting' || s.phase === 'judging') {
           center = '<div class="w-full text-center animate-slidein">' + djHdr
             + '<p class="text-white/50 uppercase text-xs">Réponse de ' + esc(s.buzzer ? s.buzzer.name : '') + (s.buzzMs != null ? ' · ⏱️ ' + (s.buzzMs / 1000).toFixed(1) + 's' : '') + '</p>'
@@ -3237,6 +3318,20 @@
       // Au verdict, on joint la fiche du morceau : elle n'a circulé qu'à cet instant.
       var myReveal = function () { return myTrack ? { title: myTrack.title, artist: myTrack.artist, cover: myTrack.cover, year: myTrack.year } : null; };
       bind('#djNext', function () { dzPause(); chan.sendIntent({ action: 'nextRound', id: ME, reveal: myReveal() }); myTrack = null; });
+      bind('#djEnd', function () {
+        // Même garde d'équité que le bouton « Terminer » de l'hôte : le DJ doit voir
+        // qui n'a pas encore eu son tour avant de clore.
+        var fi = fairInfo(s.players || {}), msg = 'Terminer la partie maintenant et afficher le classement ?';
+        if (!fi.balanced && fi.any) {
+          var short = Object.keys(s.players).map(function (k) { return s.players[k]; })
+            .filter(function (q) { return (q.played || 0) < fi.maxPlayed; })
+            .map(function (q) { return q.name + ' (' + (q.played || 0) + '/' + fi.maxPlayed + ')'; }).join(', ');
+          msg = '⚠️ Cycle DJ incomplet — ' + short + ' ont eu moins de titres jouables.\n\n'
+              + 'Le classement final sera AJUSTÉ pour rester équitable.\n\n' + msg;
+        }
+        if (!confirm(msg)) return;
+        dzPause(); chan.sendIntent({ action: 'endGame', id: ME });
+      });
       bind('#djForce', function () { chan.sendIntent({ action: 'forceJudge', id: ME }); });
       bind('#djCloseRace', function () { dzPause(); chan.sendIntent({ action: 'closeRace', id: ME }); });
       bind('#djApply', function () { chan.sendIntent({ action: 'applyTurbo', id: ME, reveal: myReveal() }); myTrack = null; });
@@ -3655,6 +3750,10 @@
            return '<button class="platBtn py-2.5 rounded-xl text-xs font-bold ' + (prefs.platform === k ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/70') + '" data-plat="' + k + '">' + PLATFORMS[k].icon + ' ' + esc(PLATFORMS[k].name) + '</button>';
          }).join('') + '</div>',
 
+      '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">🔁 Mémoire musicale</p>',
+      '  <p class="text-white/45 text-xs mb-2">L\'app retient les artistes et les morceaux déjà passés — <b>d\'une soirée à l\'autre</b> — pour ne pas te les rejouer. ' + mem().artists.length + ' artiste(s) et ' + mem().tracks.length + ' morceau(x) en mémoire.</p>',
+      '  <button id="setForget" class="w-full py-2.5 rounded-xl glass font-bold text-sm">🗑️ Oublier et repartir de zéro</button>',
+
       '  <p class="text-xs font-bold uppercase text-white/50 mt-6 mb-2">Préférences</p>',
       '  <div class="glass rounded-2xl px-4">',
       '    <div class="set-row" style="border-top:none"><span>🔊 Sons</span><button id="tgSound" class="toggle ' + (prefs.muted ? '' : 'on') + '"></button></div>',
@@ -3714,6 +3813,10 @@
     bind('#tgVib', function () { prefs.novib = !prefs.novib; store.set('novib', prefs.novib); if (!prefs.novib) vibrate(60); openSettings(); });
     bind('#tgAnim', function () { prefs.noanim = !prefs.noanim; store.set('noanim', prefs.noanim); applyPrefs(); if (!prefs.noanim) confetti(50); openSettings(); });
     bind('#tgDeezer', function () { prefs.deezer = !prefs.deezer; store.set('deezer', prefs.deezer); openSettings(); });
+    bind('#setForget', function () {
+      if (!confirm('Oublier tous les artistes et morceaux déjà joués ?\n\nLes classiques pourront revenir dès la prochaine manche.')) return;
+      memReset(); openSettings(); toast('Mémoire musicale remise à zéro', 'ok');
+    });
     bind('#srcDeezer', function () { prefs.previewSrc = 'deezer'; store.set('previewSrc', 'deezer'); openSettings(); });
     bind('#srcItunes', function () { prefs.previewSrc = 'itunes'; store.set('previewSrc', 'itunes'); openSettings(); });
     bind('#tgEco', function () { prefs.eco = !prefs.eco; store.set('eco', prefs.eco); store.set('ecoSet', true); applyPrefs(); openSettings(); });

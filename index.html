@@ -632,11 +632,28 @@
     if (initialQuery) { draw(null, initialQuery, true); musicSearch(initialQuery, function (r) { results = r || []; draw(results, initialQuery, false); }); }
   }
 
+  /* Tirage SANS REMISE des artistes : on mélange la liste et on la consomme
+     entièrement avant qu'un artiste puisse revenir. Sans ça, un tirage aléatoire
+     indépendant ramenait plusieurs fois le même artiste sur une même partie. */
+  var _bags = {};
+  function nextArtist(list) {
+    var key = list.length + '|' + list[0] + '|' + list[list.length - 1];
+    var bag = _bags[key];
+    if (!bag || !bag.length) {
+      bag = list.slice();
+      for (var i = bag.length - 1; i > 0; i--) {      // mélange de Fisher-Yates
+        var j = (Math.random() * (i + 1)) | 0, t = bag[i]; bag[i] = bag[j]; bag[j] = t;
+      }
+      _bags[key] = bag;
+    }
+    return bag.pop();
+  }
+
   /* Tire un morceau de la playlist, en évitant ceux déjà joués. cb(track|null) */
   function autoPick(pl, usedIds, cb, tries) {
     tries = tries || 0;
-    if (!pl || tries >= 4) { cb(null); return; }
-    var artist = pl.artists[(Math.random() * pl.artists.length) | 0];
+    if (!pl || !pl.artists || !pl.artists.length || tries >= 4) { cb(null); return; }
+    var artist = nextArtist(pl.artists);
     musicSearch(artist, function (res) {
       if (!res || !res.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
       var pool = res.filter(function (t) { return t.preview && usedIds.indexOf(t.id) < 0; });

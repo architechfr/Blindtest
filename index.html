@@ -649,7 +649,11 @@
   /* Mode audio de la partie : 'device' = l'app joue la musique sur le téléphone
      du DJ ; 'external' = le son vient d'ailleurs (enceinte, autre appareil). */
   var appAudioMode = 'device';
-  function canPlayInApp() { return appAudioMode === 'device'; }
+  /* Sur une manche à l'aveugle, PERSONNE ne connaît le morceau : aucun humain ne
+     peut donc le lancer depuis une source externe. L'app doit obligatoirement
+     jouer le son elle-même, quel que soit le réglage de la partie. */
+  var blindAudio = false;
+  function canPlayInApp() { return blindAudio || appAudioMode === 'device'; }
 
   function dzPlay(url) {
     // En mode "source à part", on ne lance jamais d'audio : le son vient d'ailleurs.
@@ -1556,6 +1560,7 @@
     store.set('hostGame', state);
     keepAwake();
     appAudioMode = state.audioMode || 'device'; // qui produit le son sur cette partie
+    blindAudio = !!(state.blind || state.blindRound);
     var roundTrack = null; // morceau Deezer choisi pour la manche (local hôte, jamais diffusé)
     var autoPl = store.get('autoPlaylist', null); // playlist automatique active (id) ou null
     var autoF = store.get('autoFilters', { d: [], g: [], l: [] }); // filtres combinés (décennie/genre/langue)
@@ -1591,12 +1596,16 @@
         if (playedIds.length > 200) playedIds.shift();
         roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, auto: true };
         fillYear(t, roundTrack, renderHost);
+        // Le morceau arrive après coup : si la manche est déjà lancée, on le joue.
+        if (state.phase === 'buzzing' || state.phase === 'racing' || state.phase === 'year_guess') dzPlay(roundTrack.preview);
         renderHost();
       });
     }
 
     function persist() { store.set('hostGame', state); }
-    function publish() { persist(); if (chan) chan.sendState(state); renderHost(); }
+    /* Le mode « l'app joue » s'impose dès qu'on entre sur une manche à l'aveugle. */
+    function syncBlindAudio() { blindAudio = !!(state.blind || state.blindRound); }
+    function publish() { syncBlindAudio(); persist(); if (chan) chan.sendState(state); renderHost(); }
 
     function assignTeam(pl) {
       if (!state.teams) { pl.team = null; return; }
@@ -1829,8 +1838,14 @@
         }
       } else if (!state.djRotate) { state.dj = null; }
 
-      // La finale à l'aveugle a besoin d'un morceau choisi par l'app.
-      if (state.blindRound && autoPl && !roundTrack) prefetchAuto();
+      // La finale à l'aveugle a besoin d'un morceau choisi par l'app : si aucune
+      // playlist n'est active, on en met une par défaut, sinon rien ne peut démarrer.
+      if (state.blindRound) {
+        syncBlindAudio();
+        dzPause(); roundTrack = null;                 // le morceau du DJ précédent ne vaut plus
+        if (!autoPl && !fActive()) { autoPl = 'p80'; store.set('autoPlaylist', autoPl); }
+        prefetchAuto();
+      }
 
       if (state.mode === 'fredonne') {
         var ids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
@@ -2425,7 +2440,7 @@
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">' + (isFred ? '🎶 ' + esc(s.source ? s.source.name : '') + ' va fredonner' : 'Buzz verrouillé…') + '</p><p class="text-white/50">' + (isFred ? 'Tiens-toi prêt à buzzer !' + fredTag : 'Lance le morceau maintenant !') + '</p></div>';
       } else if (s.phase === 'buzzing') {
         var hostCanBuzz = hostCanPlay();
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>' + (hostCanBuzz ? '<button id="hostBuzz" class="mt-5 w-full py-5 rounded-2xl text-2xl font-extrabold border-4 border-neon-cyan bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_40px_rgba(255,46,154,.6)] active:animate-pop">BUZZER 🔔</button>' : '') + '</div>';
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>' + (hostCanBuzz ? '<div class="mt-5">' + buzzButton(false, 'BUZZ', 'Appuie vite !', 'hostBuzz') + '</div>' : '') + '</div>';
       } else if (s.phase === 'answering') {
         if (s.buzzer.id === ME) {
           phaseBlock = [
@@ -2527,7 +2542,9 @@
                    + '<span class="font-extrabold ' + (r.pts > 0 ? 'text-neon-gold' : 'text-white/30') + ' w-12 text-right">+' + r.pts + '</span></div>';
                }).join('') : '<p class="text-white/40 text-center">Aucune réponse</p>') + '</div>',
           '  <div class="grid grid-cols-2 gap-3 mt-4">',
-          '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
+          (s.dj && s.dj.id !== ME
+            ? '    <div class="py-4 rounded-xl glass text-center text-sm text-white/50">🎧 ' + esc(s.dj.name) + ' lance le titre suivant</div>'
+            : '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>'),
           '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
           '  </div>',
           '</div>'
@@ -2570,7 +2587,9 @@
           (winNames.length ? '  <p class="text-neon-lime font-bold mb-3 mt-2">🏆 ' + esc(winNames.join(', ')) + ' (+' + s.config.pointsBuzz + ')</p>' : '  <p class="text-white/50 mb-3 mt-2">Personne n\'a deviné</p>'),
           '  <div class="space-y-1 text-sm mb-4 text-left">' + yrRows + '</div>',
           '  <div class="grid grid-cols-2 gap-3">',
-          '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
+          (s.dj && s.dj.id !== ME
+            ? '    <div class="py-4 rounded-xl glass text-center text-sm text-white/50">🎧 ' + esc(s.dj.name) + ' lance le titre suivant</div>'
+            : '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>'),
           '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
           '  </div>',
           '</div>'
@@ -2589,7 +2608,9 @@
             ? '  <button id="reopen" class="mt-5 w-full py-3.5 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">🔔 Rebond : rouvrir le buzz aux autres</button>'
             : ''),
           '  <div class="grid grid-cols-2 gap-3 mt-3">',
-          '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>',
+          (s.dj && s.dj.id !== ME
+            ? '    <div class="py-4 rounded-xl glass text-center text-sm text-white/50">🎧 ' + esc(s.dj.name) + ' lance le titre suivant</div>'
+            : '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>'),
           '    <button id="end" class="py-4 rounded-xl glass font-extrabold active:animate-pop">Terminer 🏁</button>',
           '  </div>',
           '</div>'
@@ -2835,6 +2856,7 @@
         if (st.phase === 'year_guess' && lastPhase !== 'year_guess') guessed = false;
         if (st.phase === 'buzzing' && lastPhase !== 'buzzing') answered = false;
         appAudioMode = st.audioMode || 'device'; // qui produit le son sur cette partie
+        blindAudio = !!(st.blind || st.blindRound);
         if (st.phase === 'racing' && lastPhase !== 'racing') { raceMine = null; raceCount = 0; }
         // Partie terminée → on l'archive et on cesse de proposer d'y revenir.
         if (st.phase === 'ended' && lastPhase !== 'ended') archiveGame(st, code, name);
@@ -3263,10 +3285,10 @@
   }
 
   /* Gros bouton BUZZ (réutilisé). disabled = verrouillé. */
-  function buzzButton(disabled, label, sub) {
+  function buzzButton(disabled, label, sub, id) {
     return [
       '<div class="flex flex-col items-center w-full">',
-      '  <button id="buzz" ' + (disabled ? 'disabled' : '') + ' class="bt-title select-none w-60 h-60 sm:w-64 sm:h-64 rounded-full text-4xl font-extrabold flex items-center justify-center border-4 ' +
+      '  <button id="' + (id || 'buzz') + '" ' + (disabled ? 'disabled' : '') + ' class="bt-title select-none w-60 h-60 sm:w-64 sm:h-64 rounded-full text-4xl font-extrabold flex items-center justify-center border-4 ' +
       (disabled
         ? 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed'
         : 'border-neon-cyan text-white bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_70px_rgba(255,46,154,.7),inset_0_0_44px_rgba(34,211,238,.35)] animate-ring active:animate-pop') + '">' + esc(label) + '</button>',

@@ -1132,6 +1132,9 @@
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="aveugle">',
       '      <div class="font-extrabold">🕶️ Tous à l\'aveugle</div>',
       '      <div class="text-xs opacity-80">Personne n\'anime : l\'app envoie les morceaux et corrige toute seule. <b>Tout le monde joue</b>, 10 manches. Le plus simple pour démarrer.</div></button>',
+      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="duel">',
+      '      <div class="font-extrabold">⚔️ Duel à deux</div>',
+      '      <div class="text-xs opacity-80">Tu choisis un thème, et c\'est parti : l\'app envoie les morceaux, <b>les deux peuvent buzzer</b>, elle dit tout de suite qui a bon. Rien d\'autre à régler.</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="anim">',
       '      <div class="font-extrabold">🔊 Animateur unique</div>',
       '      <div class="text-xs opacity-80">Tu restes aux commandes : tu envoies les morceaux et tu dis qui a bon. Les autres jouent.</div></button>',
@@ -1152,6 +1155,12 @@
       '    <div class="flex gap-2 overflow-x-auto pb-1">' + PLAYLISTS.map(function (p) {
            return '<button type="button" class="suBlindPl shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-black/30 text-white/75" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
          }).join('') + '</div>',
+      '    <p class="text-xs font-bold uppercase text-white/50 mt-3 mb-2">Comment on répond</p>',
+      '    <div class="grid grid-cols-2 gap-2">',
+      '      <button type="button" class="suBlindPlay py-2.5 rounded-xl text-sm font-bold bg-neon-violet text-white" data-play="buzz">🔔 Au buzz</button>',
+      '      <button type="button" class="suBlindPlay py-2.5 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-play="turbo">⚡ Tous en même temps</button>',
+      '    </div>',
+      '    <p class="text-white/40 text-xs mt-2">Au buzz : le premier qui appuie répond, l\'app dit tout de suite si c\'est bon. Parfait à deux.</p>',
       '    <div class="flex items-center gap-2 mt-3 text-sm text-white/60"><span>🏁 Nombre de manches :</span><input id="suBlindRounds" type="number" min="3" max="50" value="10" class="w-16 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
       '  </div>',
 
@@ -1262,7 +1271,18 @@
     $('#back').onclick = function () { location.hash = ''; };
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
-    var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10, setupBlindFinal = 0;
+    var setupBlind = 0, setupBlindPl = 'p80', setupBlindRounds = 10, setupBlindFinal = 0, setupBlindPlay = 'buzz';
+    (function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.suBlindPlay'), function (b) {
+        b.onclick = function () {
+          setupBlindPlay = b.getAttribute('data-play');
+          Array.prototype.forEach.call(document.querySelectorAll('.suBlindPlay'), function (x) {
+            x.className = x.className.replace('bg-neon-violet text-white', 'bg-black/30 text-white/70');
+          });
+          b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
+        };
+      });
+    })();
     (function () {
       var fb = document.getElementById('suBlindFinal');
       if (fb) fb.onclick = function () {
@@ -1378,7 +1398,8 @@
       }
       var STYLES = {
         tournoi:  function () { choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
-        aveugle:  function () { press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); },
+        aveugle:  function () { press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); },
+        duel:     function () { press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); },
         anim:     function () { choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },
         surprise: function () { choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); }
       };
@@ -1427,7 +1448,7 @@
            pour que personne ne puisse connaître la réponse à l'avance. */
         if (setupBlind) {
           st.blind = 1;
-          st.mode = 'turbo';        // tout le monde répond en même temps
+          st.mode = (setupBlindPlay === 'turbo') ? 'turbo' : 'classic'; // buzz par défaut
           st.djRotate = 0;          // aucun DJ
           st.wheel = 0;             // pas de changement de mode surprise
           st.audioMode = 'device';  // c'est l'app qui joue
@@ -1579,9 +1600,15 @@
           // Chrono : temps entre l'ouverture du buzz et la réponse envoyée (info pour le DJ).
           if (state.buzzOpenAt) state.buzzMs = Date.now() - state.buzzOpenAt;
           state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, state.answerMode) : null;
+          beep(520, 0.12, 'sine');
+          // À l'aveugle, personne ne peut juger (personne ne connaît le titre) :
+          // l'app tranche seule, tout de suite. Idéal à deux joueurs.
+          if ((state.blind || state.blindRound) && state.mode !== 'fredonne' && roundTrack) {
+            validate(state.suggest === 'ok', state.suggest === 'half');
+            return;
+          }
           state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
           state.voteAt = Date.now(); // départ du temps de vote des autres joueurs
-          beep(520, 0.12, 'sine');
           publish();
         }
       } else if (p.action === 'joker') {
@@ -1759,14 +1786,33 @@
       }
       armBuzz();
     }
+    /* L'hôte peut jouer chaque fois qu'il NE CONNAÎT PAS la réponse :
+       - mode Fredonne (quand ce n'est pas lui qui fredonne)
+       - partie ou manche à l'aveugle (c'est l'app qui a choisi le morceau)
+       - rotation DJ quand un autre joueur est aux commandes */
+    function hostCanPlay() {
+      if (state.mode === 'fredonne') return !state.source || state.source.id !== ME;
+      if (state.blind || state.blindRound) return true;
+      if (state.djRotate && state.dj && state.dj.id !== ME) return true;
+      return false;
+    }
     function hostBuzz() {
-      if (state.phase === 'buzzing' && !state.buzzer && state.mode === 'fredonne' && (!state.source || state.source.id !== ME)) {
+      if (state.phase === 'buzzing' && !state.buzzer && hostCanPlay()) {
         var pl = ensurePlayer(ME, state.hostName);
         state.buzzer = { id: pl.id, name: pl.name };
         state.phase = 'answering';
         beep(180, 0.35, 'square'); vibrate([0, 120, 60, 120]);
         publish();
       }
+    }
+    /* L'hôte répond aussi en mode « tout le monde répond ». */
+    function hostRace(text) {
+      if (state.phase !== 'racing' || (state.answers && state.answers[ME])) return;
+      var rp = ensurePlayer(ME, state.hostName);
+      state.answers[ME] = { name: rp.name, text: String(text || '').slice(0, 120), ms: Date.now() - (state.buzzOpenAt || Date.now()) };
+      beep(660, 0.06, 'sine');
+      persist(); renderHost();
+      if (chan) chan.sendProgress({ count: Object.keys(state.answers).length, total: Object.keys(state.players).length, from: ME, ms: state.answers[ME].ms, name: rp.name });
     }
     function hostAnswer(text) {
       if (state.phase === 'answering' && state.buzzer && state.buzzer.id === ME) {
@@ -2289,7 +2335,7 @@
       } else if (s.phase === 'armed') {
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">' + (isFred ? '🎶 ' + esc(s.source ? s.source.name : '') + ' va fredonner' : 'Buzz verrouillé…') + '</p><p class="text-white/50">' + (isFred ? 'Tiens-toi prêt à buzzer !' + fredTag : 'Lance le morceau maintenant !') + '</p></div>';
       } else if (s.phase === 'buzzing') {
-        var hostCanBuzz = isFred && (!s.source || s.source.id !== ME);
+        var hostCanBuzz = hostCanPlay();
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>' + (hostCanBuzz ? '<button id="hostBuzz" class="mt-5 w-full py-5 rounded-2xl text-2xl font-extrabold border-4 border-neon-cyan bg-gradient-to-br from-neon-pink to-rose-600 shadow-[0_0_40px_rgba(255,46,154,.6)] active:animate-pop">BUZZER 🔔</button>' : '') + '</div>';
       } else if (s.phase === 'answering') {
         if (s.buzzer.id === ME) {
@@ -2341,6 +2387,11 @@
           '  <p class="text-white/50 mb-3">Plus c\'est rapide, plus ça rapporte (jusqu\'à 100 pts)</p>',
           '  <div class="flex items-center justify-center gap-6 mb-4">',
           '    <div><div class="text-3xl font-extrabold text-neon-cyan">' + got + '/' + lb.length + '</div><p class="text-white/40 text-xs">réponses</p></div>',
+          // L'hôte joue aussi quand il ne connaît pas le morceau
+          (hostCanPlay() ? '</div><div class="mb-3">' + ((s.answers || {})[ME]
+            ? '<p class="text-neon-lime font-bold">Ta réponse est enregistrée ✓</p>'
+            : '<input id="hostRaceAns" maxlength="120" placeholder="Ta réponse…" class="w-full bg-black/40 rounded-xl px-4 py-3 text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
+              + '<button id="hostRaceSend" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">Envoyer ⚡</button>') + '<div class="flex items-center justify-center gap-6">' : ''),
           '    <div><div id="raceLeft" class="text-3xl font-extrabold text-neon-gold">' + Math.max(0, Math.ceil(((s.buzzOpenAt || Date.now()) + (s.turboSecs || 30) * 1000 - Date.now()) / 1000)) + '</div><p class="text-white/40 text-xs">secondes</p></div>',
           '  </div>',
           '  <div class="flex flex-wrap justify-center gap-2 mb-4">' + lb.map(function (p) {
@@ -2574,6 +2625,8 @@
         row.onclick = function () { openPlayerAdmin(row.getAttribute('data-pid')); };
       });
       bind('#hostBuzz', hostBuzz);
+      bind('#hostRaceSend', function () { var e = $('#hostRaceAns'); hostRace(e ? e.value.trim() : ''); });
+      var hra = $('#hostRaceAns'); if (hra) hra.onkeydown = function (e) { if (e.key === 'Enter') hostRace(hra.value.trim()); };
       var hAns = $('#hostAns'); if (hAns) hAns.focus();
       bind('#hostSend', function () { var e = $('#hostAns'); hostAnswer(e ? e.value.trim() : ''); });
       bind('#hostOral', function () { hostAnswer(''); });

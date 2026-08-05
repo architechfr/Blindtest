@@ -742,7 +742,12 @@
         bar.style.width = Math.min(100, (dzAudio.currentTime / dzAudio.duration) * 100) + '%';
         if (tm) { var s = Math.floor(dzAudio.currentTime); tm.textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
       };
-      dzAudio.onended = function () { if (onChange) onChange(); };
+      // Fin de l'extrait : on met à jour UNIQUEMENT le bouton lecture.
+      // (Un rendu complet ici effaçait la réponse en cours de saisie.)
+      dzAudio.onended = function () {
+        var b = document.getElementById('plyToggle');
+        if (b) { b.textContent = '▶'; b.className = b.className.replace('bg-white/15', 'bg-gradient-to-br from-neon-lime to-neon-cyan text-black'); }
+      };
     }
   }
   function dzPause() { if (dzAudio) try { dzAudio.pause(); } catch (e) {} }
@@ -2288,6 +2293,23 @@
 
     /* --- Rendu de l'écran hôte --- */
     function renderHost() {
+      /* Filet anti-perte de saisie (l'hôte joue aussi et peut être en train
+         d'écrire quand un évènement redessine l'écran). */
+      var _sv = {}, _foc = null, _car = null;
+      Array.prototype.forEach.call(app.querySelectorAll('input, textarea'), function (el) {
+        if (el.id) _sv[el.id] = el.value;
+        if (document.activeElement === el) { _foc = el.id; try { _car = el.selectionStart; } catch (e) {} }
+      });
+      var _restore = function () {
+        Object.keys(_sv).forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el && !el.value && _sv[id]) el.value = _sv[id];
+        });
+        if (_foc) {
+          var f = document.getElementById(_foc);
+          if (f) { try { f.focus(); if (_car != null) f.setSelectionRange(_car, _car); } catch (e) {} }
+        }
+      };
       var s = state;
       var origin = location.origin + location.pathname;
       var joinUrl = origin + '#join=' + s.code;
@@ -2819,6 +2841,7 @@
         publish(); toast('Manche annulée — tu peux relancer', 'info');
       });
       bind('#quit', function () { if (confirm('Quitter et supprimer la partie ?')) { store.del('hostGame'); teardown(); location.hash = ''; } });
+      _restore(); // rend la saisie en cours si l'écran vient d'être redessiné
     }
 
     renderHost();

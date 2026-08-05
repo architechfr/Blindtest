@@ -1215,8 +1215,9 @@
       '  <p id="goalHint" class="text-white/40 text-xs mb-5">Partie <b>libre</b> : tu décides quand terminer (bouton « Terminer »).</p>',
 
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
-      '  <div class="grid grid-cols-3 gap-2 mb-2">',
+      '  <div class="grid grid-cols-4 gap-2 mb-2">',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-dj="0">Off (moi seul)</button>',
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="3">Tous les 3</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="5">Tous les 5</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="10">Tous les 10</button>',
       '  </div>',
@@ -1394,7 +1395,19 @@
       }
       function choose(cls, attr, valeur) {
         var el = document.querySelector('.' + cls + '[' + attr + '="' + valeur + '"]');
-        if (el) el.click();
+        if (el) { el.click(); return; }
+        // Sécurité : si l'option visée n'existe pas, on prend la plus proche
+        // au lieu de ne rien faire (un preset silencieusement inactif est pire).
+        var tous = document.querySelectorAll('.' + cls);
+        if (!tous.length) return;
+        var cible = parseFloat(valeur), best = null, ecart = Infinity;
+        Array.prototype.forEach.call(tous, function (b) {
+          var v = parseFloat(b.getAttribute(attr));
+          if (isNaN(v) || isNaN(cible)) return;
+          var d = Math.abs(v - cible);
+          if (d < ecart) { ecart = d; best = b; }
+        });
+        (best || tous[0]).click();
       }
       var STYLES = {
         tournoi:  function () { choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); },

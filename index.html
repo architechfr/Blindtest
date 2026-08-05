@@ -1226,7 +1226,9 @@
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="5">Tous les 5</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="10">Tous les 10</button>',
       '  </div>',
-      '  <p id="suDjNote" class="text-white/40 text-xs mb-2">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là). <b>La partie dure un tour complet</b> : par exemple 3 titres × 4 joueurs = 12 manches.</p>',
+      '  <p id="suDjNote" class="text-white/40 text-xs mb-2">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).<br>',
+      '  <b class="text-white/60">Durée de la partie = nombre de joueurs × titres par DJ, + les manches à l\'aveugle.</b><br>',
+      '  Exemples : 3 joueurs × 3 titres = 9, +3 → <b>12 manches</b> · 3 joueurs × 5 titres = 15, +5 → <b>20 manches</b>.</p>',
       '  <div id="suFinalBox" class="mb-5"><p class="text-xs font-bold uppercase text-white/50 mb-2">🕶️ Manches à l\'aveugle en fin de tour</p>',
       '  <div class="grid grid-cols-4 gap-2">' + [0, 3, 5, 10].map(function (n) {
            return '<button type="button" class="suFinalN py-2.5 rounded-xl text-sm font-bold ' + (n === 3 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-n="' + n + '">' + (n === 0 ? 'Aucune' : n) + '</button>';
@@ -2413,7 +2415,9 @@
           '  <button id="copyLink" class="mt-4 text-sm text-white/60 underline">Copier le lien d\'invitation</button>',
           '  <div class="mt-6 flex items-center justify-center gap-2 text-white/80 font-bold"><span class="text-2xl">👥</span> ' + nb + ' joueur' + (nb > 1 ? 's' : '') + ' dans le salon</div>',
              chips,
-          (s.djRotate && nb ? '  <p class="mt-4 text-sm text-neon-cyan font-bold">🎧 Premier DJ : ' + esc((rotationArr()[0] || {}).name || '') + ' (puis rotation tous les ' + (s.djEvery || 5) + ' titres)</p>' : ''),
+          (s.djRotate && nb ? '  <p class="mt-4 text-sm text-neon-cyan font-bold">🎧 Premier DJ : ' + esc((rotationArr()[0] || {}).name || '') + '</p>'
+            + '  <p class="text-white/55 text-sm mt-1">' + tournoiTexte(tournoiPlan(s)) + '</p>'
+            + '  <p class="text-white/35 text-xs">Le total se réajuste si quelqu\'un rejoint.</p>' : ''),
           '  <button id="launch" class="mt-6 w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop ' + (nb ? '' : 'opacity-50 pointer-events-none') + '">Lancer la manche ' + (s.round + 1) + ' ' + modeIcon + '</button>',
           '</div>'
         ].join('');
@@ -2632,6 +2636,11 @@
           var g = goalReached(s);
           if (!g || s.phase === 'ended' || s.phase === 'lobby') {
             // Sinon : progression discrète vers l'objectif
+            // Tournoi : la longueur découle du nombre de joueurs × titres par DJ.
+            if (s.djRotate && s.phase !== 'ended' && s.phase !== 'lobby') {
+              var pl2 = tournoiPlan(s);
+              if (pl2 && pl2.total) return '  <div class="text-center mb-3 text-xs text-white/45">🏁 Manche ' + s.round + ' / ' + pl2.total + (s.blindRound ? ' · série à l\'aveugle' : '') + '</div>';
+            }
             if (s.goal === 'rounds' && s.goalVal && s.phase !== 'ended' && s.phase !== 'lobby') return '  <div class="text-center mb-3 text-xs text-white/45">🏁 Manche ' + s.round + ' / ' + s.goalVal + '</div>';
             if (s.goal === 'score' && s.goalVal && s.phase !== 'ended' && s.phase !== 'lobby') return '  <div class="text-center mb-3 text-xs text-white/45">🏁 Objectif : ' + s.goalVal + ' pts</div>';
             return '';
@@ -3321,6 +3330,21 @@
 
   /* Objectif de fin de partie atteint ? On le SIGNALE sans couper brutalement :
      l'hôte garde la main (et l'avertissement d'équité du cycle DJ s'applique). */
+  /* Longueur d'un tournoi : chaque joueur passe DJ pour N titres, puis on ajoute
+     les manches à l'aveugle. Ex. 3 joueurs × 5 titres = 15, + 5 = 20 manches. */
+  function tournoiPlan(s) {
+    if (!s || !s.djRotate) return null;
+    var nbJ = Object.keys(s.players || {}).length;
+    var parDj = s.djEvery || 5;
+    var fin = (s.finalN != null ? s.finalN : 0);
+    return { joueurs: nbJ, parDj: parDj, dj: nbJ * parDj, aveugle: fin, total: nbJ * parDj + fin };
+  }
+  function tournoiTexte(p) {
+    if (!p || !p.joueurs) return '';
+    return p.joueurs + ' joueur' + (p.joueurs > 1 ? 's' : '') + ' × ' + p.parDj + ' titres = ' + p.dj
+      + (p.aveugle ? ' + ' + p.aveugle + ' à l\'aveugle' : '') + ' = <b>' + p.total + ' manches</b>';
+  }
+
   function goalReached(s) {
     // Tournoi : le tour complet de DJ + ses manches à l'aveugle valent fin de partie.
     if (s && s._finTour) return { label: 'Tour complet joué par tous les DJ', done: true };

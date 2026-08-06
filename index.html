@@ -363,9 +363,12 @@
     s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'output=jsonp&callback=' + name;
     document.body.appendChild(s);
   }
-  function deezerSearch(q, cb) {
+  /* `limit` : 12 suffit pour une liste de choix à l'écran, mais le tirage
+     automatique en demande beaucoup plus — sinon on tourne sur les 12 mêmes
+     tubes de chaque artiste d'une soirée à l'autre. */
+  function deezerSearch(q, cb, limit) {
     if (!q) { cb([]); return; }
-    jsonp('https://api.deezer.com/search?limit=12&q=' + encodeURIComponent(q), function (d) {
+    jsonp('https://api.deezer.com/search?limit=' + (limit || 12) + '&q=' + encodeURIComponent(q), function (d) {
       cb(d && d.data ? d.data.filter(function (t) { return t.preview; }) : null);
     });
   }
@@ -378,9 +381,9 @@
      Les résultats sont normalisés au format Deezer pour que le reste
      du code n'ait rien à changer ; l'année est fournie directement.
      --------------------------------------------------------------- */
-  function itunesSearch(q, cb) {
+  function itunesSearch(q, cb, limit) {
     if (!q) { cb([]); return; }
-    var url = 'https://itunes.apple.com/search?entity=song&limit=12&country=FR&term=' + encodeURIComponent(q);
+    var url = 'https://itunes.apple.com/search?entity=song&limit=' + (limit || 12) + '&country=FR&term=' + encodeURIComponent(q);
     try {
       fetch(url).then(function (r) { return r.json(); }).then(function (d) {
         var list = (d && d.results ? d.results : []).filter(function (t) { return t.previewUrl; }).map(function (t) {
@@ -399,9 +402,9 @@
   }
 
   /* Recherche via la banque choisie dans les réglages. */
-  function musicSearch(q, cb) {
-    if (prefs && prefs.previewSrc === 'itunes') itunesSearch(q, cb);
-    else deezerSearch(q, cb);
+  function musicSearch(q, cb, limit) {
+    if (prefs && prefs.previewSrc === 'itunes') itunesSearch(q, cb, limit);
+    else deezerSearch(q, cb, limit);
   }
   /* Complète l'année si la banque ne l'a pas déjà fournie. */
   function fillYear(t, obj, done) {
@@ -644,7 +647,8 @@
      `store` est défini plus bas dans le fichier : on initialise donc à
      la première utilisation, jamais au chargement.
      --------------------------------------------------------------- */
-  var MEM_TRACKS = 400, MEM_ARTISTS = 150;
+  var MEM_TRACKS = 800, MEM_ARTISTS = 150;
+  var AUTO_LIMIT = 50;   // titres ramenés par artiste pour le tirage automatique
   var _mem = null;
   function mem() {
     if (!_mem) {
@@ -703,7 +707,7 @@
       if (!pool.length && dernier) pool = res.filter(function (t) { return t.preview; });
       if (!pool.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
       cb(pool[(Math.random() * pool.length) | 0]);
-    });
+    }, AUTO_LIMIT);
   }
 
   var dzAudio = document.getElementById('dzaudio');
@@ -1290,15 +1294,19 @@
       '  <p id="goalHint" class="text-white/40 text-xs mb-5">Partie <b>libre</b> : tu décides quand terminer (bouton « Terminer »).</p>',
 
       '  <p id="suDjTitle" class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
-      '  <div id="suDjBox" class="grid grid-cols-4 gap-2 mb-2">',
+      '  <div id="suDjBox" class="grid grid-cols-3 gap-2 mb-2">',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-dj="0">Off (moi seul)</button>',
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="1">Chaque titre</button>',
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="2">Tous les 2</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="3">Tous les 3</button>',
       '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="5">Tous les 5</button>',
-      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="10">Tous les 10</button>',
+      // -1 = tirage au sort à chaque passage de main, entre 1 et 5 titres.
+      '    <button type="button" class="suDj py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-dj="-1">🎲 Aléatoire</button>',
       '  </div>',
       '  <p id="suDjNote" class="text-white/40 text-xs mb-2">Chacun devient DJ à son tour : il choisit les morceaux pendant sa série (et ne marque pas de points sur ces titres-là).<br>',
       '  <b class="text-white/60">Durée de la partie = nombre de joueurs × titres par DJ, + les manches à l\'aveugle.</b><br>',
-      '  Exemples : 3 joueurs × 3 titres = 9, +3 → <b>12 manches</b> · 3 joueurs × 5 titres = 15, +5 → <b>20 manches</b>.</p>',
+      '  Exemples : 3 joueurs × 3 titres = 9, +3 → <b>12 manches</b> · 3 joueurs × 5 titres = 15, +5 → <b>20 manches</b>.<br>',
+      '  <b class="text-white/60">🎲 Aléatoire</b> : à chaque passage de main, l\'app tire entre 1 et 5 titres — personne ne sait quand la main tourne.</p>',
       '  <div id="suFinalBox" class="mb-5"><p class="text-xs font-bold uppercase text-white/50 mb-2">🕶️ Manches à l\'aveugle en fin de tour</p>',
       '  <div class="grid grid-cols-4 gap-2">' + [0, 3, 5, 10].map(function (n) {
            return '<button type="button" class="suFinalN py-2.5 rounded-xl text-sm font-bold ' + (n === 3 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-n="' + n + '">' + (n === 0 ? 'Aucune' : n) + '</button>';
@@ -1535,7 +1543,7 @@
         if (box) box.style.display = avecRotation ? '' : 'none';
         if (tit) { tit.style.display = avecRotation ? '' : 'none'; tit.textContent = '🎧 Titres par DJ avant de passer la main'; }
         if (off) off.style.display = avecRotation ? 'none' : '';
-        if (box) box.className = 'grid ' + (avecRotation ? 'grid-cols-3' : 'grid-cols-4') + ' gap-2 mb-2';
+        if (box) box.className = 'grid grid-cols-3 gap-2 mb-2';
         var note = document.getElementById('suDjNote');
         if (note) note.style.display = avecRotation ? '' : 'none';
       }
@@ -1572,7 +1580,8 @@
         };
         var st = initialState(genCode(), hostName, partyName, cfg);
         st.mode = setupMode; st.teams = setupTeams; st.answerMode = setupAns;
-        st.djRotate = setupDj > 0 ? 1 : 0; st.djEvery = setupDj || 5;
+        // setupDj : 0 = pas de rotation · -1 = aléatoire (1 à 5) · n = tous les n titres
+        st.djRotate = setupDj !== 0 ? 1 : 0; st.djEvery = setupDj || 5;
         st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.blindFinal = setupBlindFinal;
@@ -1616,7 +1625,7 @@
       buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
       buzzOpenAt: 0, buzzMs: null, voteAt: 0, tried: [],
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
-      djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, dj: null,
+      djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, _djLeft: 0, _djSpan: 0, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
       wheel: 0, challenge: null, mult: 1, audioMode: 'device', blind: 0,
       blindFinal: 0, blindRound: 0, hostPlays: 1,
@@ -1804,20 +1813,25 @@
       } else if (p.action === 'vote') {
         if (state.phase === 'voting' && state.buzzer && state.buzzer.id !== p.id) {
           state.votes[p.id] = p.value === 1 ? 1 : -1;
+          // L'hôte a répondu et personne d'autre ne peut juger : dès que tout le
+          // monde a voté, le verdict tombe sans que l'hôte ait à toucher à rien.
+          if (hostIsAnswering() && !otherJudge() && voteComplete()) { resolveByVote(); return; }
           publish();
         }
       } else if (p.action === 'judge') {
         // Le fredonneur (mode Fredonne) OU le DJ de la série tranche depuis son téléphone.
         var isSource = state.source && state.source.id === p.id;
         var isDJ = state.dj && state.dj.id === p.id;
+        if (state.buzzer && state.buzzer.id === p.id) return;   // jamais son propre verdict
         if ((state.phase === 'judging' || state.phase === 'voting') && (isSource || isDJ)) {
           // Le DJ joint la fiche de SON morceau : on l'utilise pour la révélation.
           if (p.reveal && p.reveal.title) roundTrack = p.reveal;
           validate(p.correct === true, p.partial === true);
         }
       } else if (p.action === 'grade') {
-        // Mode Turbo : le DJ corrige une réponse depuis son téléphone.
-        if (state.phase === 'grading' && state.dj && state.dj.id === p.id && p.target) {
+        // Mode Turbo : le DJ corrige une réponse depuis son téléphone — sauf la sienne.
+        if (state.phase === 'grading' && state.dj && state.dj.id === p.id && p.target
+            && p.target !== state._autoGraded) {
           state.grades[p.target] = p.g;
           publish();
         }
@@ -1885,6 +1899,7 @@
       state.reveal = null; state.suggest = null;
       state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
       state.answers = {}; state.grades = {}; state.turboScores = null; state.jok = {};
+      state.bonusMsg = null; state._autoGraded = null;
     }
     function armBuzz() {
       state.phase = 'armed';
@@ -1921,7 +1936,7 @@
       var tourComplet = nbDj > 0 && ((state._djIdx + 1) % nbDj === 0); // tous les DJ sont passés
       var nFinal = (state.finalN != null ? state.finalN : (state.blindFinal ? 1 : 0));
       if (state.djRotate && nFinal > 0 && state.djCount > 0
-          && (state.djCount % (state.djEvery || 5) === 0)
+          && (state._djLeft || 0) <= 0              // le DJ courant a fini sa série
           && tourComplet
           && (state._blindDone || 0) < nFinal) {     // série de manches à l'aveugle
         state.blindRound = 1;
@@ -1934,10 +1949,17 @@
       if (state.djRotate && !state.blindRound) {
         var dids = rotationArr().map(function (p) { return p.id; }); // ordre d'arrivée, stable
         if (dids.length) {
-          var dEvery = state.djEvery || 5;
-          if (!state.dj || (state.djCount % dEvery === 0)) state._djIdx = state._djIdx + 1;
+          /* On compte les titres restants au DJ courant plutôt que de faire un
+             modulo sur le total : c'est le seul moyen de gérer une série dont la
+             longueur est tirée au sort (djEvery = -1 → entre 1 et 5 titres). */
+          if (!state.dj || (state._djLeft || 0) <= 0) {
+            state._djIdx = state._djIdx + 1;
+            state._djSpan = (state.djEvery === -1) ? (1 + ((Math.random() * 5) | 0)) : (state.djEvery || 5);
+            state._djLeft = state._djSpan;
+          }
           var did = dids[state._djIdx % dids.length];
           state.dj = { id: did, name: state.players[did].name };
+          state._djLeft = (state._djLeft || 1) - 1;
           state.djCount = (state.djCount || 0) + 1;
         }
       } else if (!state.djRotate) { state.dj = null; }
@@ -1994,6 +2016,40 @@
       if (state.djRotate && state.dj && state.dj.id !== ME) return true;
       return false;
     }
+
+    /* ---------------------------------------------------------------
+       VERROU ANTI-TRICHE — personne ne juge sa propre réponse.
+       Celui qui crée la partie tient le serveur, mais ça ne lui donne
+       aucun pouvoir sur les points : dès qu'il répond lui-même, il perd
+       la main sur le verdict, dans TOUS les modes.
+         · manche à l'aveugle → l'app tranche (elle connaît le titre)
+         · un autre juge existe (DJ, fredonneur) → c'est lui qui tranche
+         · sinon → la majorité des votes des autres joueurs tranche
+       --------------------------------------------------------------- */
+    function hostIsAnswering() { return !!(state.buzzer && state.buzzer.id === ME); }
+    function otherJudge() {
+      if (state.mode === 'fredonne' && state.source && state.source.id !== ME) return true;
+      if (state.dj && state.dj.id !== ME) return true;
+      return false;
+    }
+    /* Verdict rendu par les autres. Égalité ou aucun vote : l'app tranche si elle
+       connaît le titre ; sinon la réponse est comptée fausse — on n'accorde jamais
+       le bénéfice du doute à celui qui tient la partie. */
+    function resolveByVote() {
+      if (state.phase !== 'voting' || !state.buzzer) return;
+      var t = tallyVotes();
+      if (t.up > t.down) { validate(true, false); return; }
+      if (t.down > t.up) { validate(false, false); return; }
+      if (state.suggest) { validate(state.suggest === 'ok', state.suggest === 'half'); return; }
+      validate(false, false);
+    }
+    /* Le vote des autres est-il complet ? (tout le monde sauf celui qui a répondu) */
+    function voteComplete() {
+      var t = tallyVotes();
+      var expected = Math.max(0, Object.keys(state.players).length - 1);
+      return expected > 0 && (t.up + t.down) >= expected;
+    }
+
     function hostBuzz() {
       if (state.phase === 'buzzing' && !state.buzzer && hostCanPlay()) {
         var pl = ensurePlayer(ME, state.hostName);
@@ -2016,6 +2072,14 @@
       if (state.phase === 'answering' && state.buzzer && state.buzzer.id === ME) {
         state.answer = String(text || '').slice(0, 120);
         if (state.buzzOpenAt) state.buzzMs = Date.now() - state.buzzOpenAt;
+        /* Exactement le même traitement que pour un joueur — c'était le trou :
+           l'hôte n'avait ni suggestion ni validation automatique, il arrivait donc
+           toujours sur l'écran de verdict… qu'il pouvait trancher lui-même. */
+        state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, state.answerMode) : null;
+        if ((state.blind || state.blindRound) && state.mode !== 'fredonne' && roundTrack) {
+          validate(state.suggest === 'ok', state.suggest === 'half');
+          return;
+        }
         state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
         state.voteAt = Date.now();
         publish();
@@ -2024,6 +2088,9 @@
     function revealYear(yr) {
       yr = parseInt(yr, 10);
       if (isNaN(yr) && roundTrack && roundTrack.year) yr = roundTrack.year;
+      /* L'hôte a proposé une année lui aussi : il ne choisit pas celle qui le
+         ferait gagner — l'année du morceau s'impose. */
+      if (roundTrack && roundTrack.year && state.guesses[ME] != null) yr = roundTrack.year;
       if (isNaN(yr)) { toast('Entre une année (ou choisis un morceau Deezer)', 'err'); return; }
       dzPause();
       if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
@@ -2045,12 +2112,49 @@
           }
         }
       });
+      grantBonuses();
       state.result = { year: yr, winners: winners, best: best };
       state.phase = 'year_reveal';
       state.history.push({ round: state.round, year: yr });
       confetti(150); beep(880, 0.3, 'sine');
       publish();
     }
+    /* ---------------------------------------------------------------
+       BONUS QUI REVIENNENT — un joker consommé était perdu pour toute la
+       partie, et la fin devenait plate. Deux robinets, volontairement
+       opposés, appelés après chaque attribution de points :
+         · la SÉRIE récompense les forts — 3 bonnes réponses d'affilée = 🃏 ×2
+         · le RETARD fait revenir les autres — distancé par le leader = 🛡️
+       Plafonné, pour qu'on les joue au lieu de les accumuler.
+       --------------------------------------------------------------- */
+    var JOKER_MAX = 3;
+    function grantBonuses() {
+      if (!state.jokers) return;
+      var arr = Object.keys(state.players).map(function (k) { return state.players[k]; });
+      if (!arr.length) return;
+      var top = -Infinity;
+      arr.forEach(function (p) { if (p.score > top) top = p.score; });
+      // Le barème Turbo est sur 100, pas sur 5 : le seuil de « retard » suit le mode.
+      var unite = (state.mode === 'turbo') ? 80 : Math.abs((state.config && state.config.pointsBuzz) || 5);
+      var seuil = unite * 3;
+      var msgs = [];
+      arr.forEach(function (p) {
+        if ((p.streak || 0) >= 3 && (p.streak % 3) === 0 && p._giftAt !== p.streak) {
+          p._giftAt = p.streak;
+          if ((p.jx2 || 0) < JOKER_MAX) {
+            p.jx2 = (p.jx2 || 0) + 1;
+            msgs.push('🔥 ' + p.name + ' · ' + p.streak + ' d\'affilée → 🃏 ×2');
+          }
+        }
+        // On ne redonne un bouclier qu'à quelqu'un qui n'a plus rien en main.
+        if ((top - p.score) >= seuil && ((p.jx2 || 0) + (p.jsh || 0)) < 1) {
+          p.jsh = (p.jsh || 0) + 1;
+          msgs.push('🫱 ' + p.name + ' · distancé → 🛡️ bouclier');
+        }
+      });
+      state.bonusMsg = msgs.length ? msgs : null;
+    }
+
     function validate(correct, partial) {
       if (!state.buzzer) return;
       var b = state.players[state.buzzer.id];
@@ -2082,6 +2186,7 @@
         if (!state.players[vid]) return;
         state.players[vid].score += agreed ? state.config.pointsVote : (state.config.pointsVoteWrong || 0);
       });
+      grantBonuses();
       state.result = { correct: correct, partial: !!partial, gain: gain, combo: combo, joker: jokerLbl, streak: b ? b.streak : 0 };
       dzPause();
       // Reste-t-il quelqu'un qui pourrait rebondir ? (si oui et réponse fausse, on ne révèle pas encore)
@@ -2132,6 +2237,11 @@
       // Partie à l'aveugle : personne ne connaît la réponse, donc personne ne
       // corrige — l'app tranche seule et enchaîne directement sur les résultats.
       if (state.blind || state.blindRound) { applyTurbo(); return; }
+      /* Le correcteur (DJ de la série, sinon l'hôte) a peut-être répondu lui aussi :
+         sa note à lui est celle de l'app, définitive, et son bouton est verrouillé. */
+      state._autoGraded = null;
+      var correcteur = (state.dj && state.dj.id) ? state.dj.id : ME;
+      if (state.answers[correcteur]) state._autoGraded = correcteur;
       state.phase = 'grading';
       publish();
     }
@@ -2172,6 +2282,7 @@
     function applyTurbo() {
       var res = turboPoints();
       Object.keys(res).forEach(function (id) { if (state.players[id]) state.players[id].score += res[id].pts; });
+      grantBonuses();
       state.turboScores = res;
       if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
       state.phase = 'turbo_reveal';
@@ -2183,11 +2294,11 @@
     function replay() {
       Object.keys(state.players).forEach(function (id) {
         var p = state.players[id];
-        p.score = 0; p.played = 0; p.djTurns = 0; p.streak = 0; p.best = 0;
+        p.score = 0; p.played = 0; p.djTurns = 0; p.streak = 0; p.best = 0; p._giftAt = 0;
         p.jx2 = state.jokers ? 1 : 0; p.jsh = state.jokers ? 1 : 0;
       });
       state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
-      state._djIdx = -1; state.djCount = 0; state.dj = null;
+      state._djIdx = -1; state.djCount = 0; state.dj = null; state._djLeft = 0; state._djSpan = 0;
       dzPause(); roundTrack = null;
       resetRound(); state.history = [];
       publish();
@@ -2303,12 +2414,16 @@
     var voteTick = setInterval(function () {
       if (document.hidden) return;
       if (state.phase === 'voting') {
-        var el = document.getElementById('voteLeft');
-        if (!el) return;
         var secs = (state.config && state.config.voteSecs) || 10;
         var left = state.voteAt ? Math.max(0, Math.ceil((state.voteAt + secs * 1000 - Date.now()) / 1000)) : 0;
-        if (el.textContent !== String(left)) el.textContent = left;
-        if (left === 0) renderHost(); // fin du décompte : on débloque les boutons
+        var el = document.getElementById('voteLeft');
+        if (left > 0) { if (el && el.textContent !== String(left)) el.textContent = left; return; }
+        /* Temps écoulé. Si c'est l'hôte qui a répondu et que personne d'autre ne
+           peut juger, le vote des autres tranche tout seul — l'hôte n'a aucun
+           bouton à presser, donc rien à truquer. Ce test doit passer même quand
+           le décompte n'est plus affiché : d'où l'absence de sortie anticipée. */
+        if (hostIsAnswering() && !otherJudge()) { resolveByVote(); return; }
+        if (el) renderHost(); // sinon on débloque une seule fois les boutons du juge
       } else if (state.phase === 'racing' && state.buzzOpenAt) {
         // Turbo : la fenêtre de réponse est celle qui sert au calcul des points.
         var T = (state.turboSecs || 30) * 1000;
@@ -2579,6 +2694,7 @@
         var expected = Math.max(0, lb.length - 1); // tout le monde sauf celui qui a buzzé
         var allVoted = expected > 0 && (t.up + t.down) >= expected;
         var canDecide = (left === 0) || allVoted;
+        var moiQuiReponds = hostIsAnswering(), jugeAilleurs = otherJudge();
         phaseBlock = [
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
           '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + (s.buzzMs != null ? ' · ⏱️ ' + (s.buzzMs / 1000).toFixed(1) + ' s' : '') + '</p>',
@@ -2588,14 +2704,24 @@
           (canDecide
             ? '  <p class="text-neon-lime text-sm font-bold mb-2">' + (allVoted ? 'Tout le monde a voté ✓' : 'Temps de vote écoulé') + '</p>'
             : '  <div class="mb-3"><div id="voteLeft" class="text-4xl font-extrabold text-neon-cyan glow-cyan">' + left + '</div><p class="text-white/50 text-xs">temps de vote… laisse les autres répondre</p></div>'),
-          '  <div class="grid grid-cols-2 gap-3 ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">',
-          '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
-          '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
-          '  </div>',
-          ((s.answerMode || 'both') === 'both'
-            ? '  <button id="half" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">≈ À moitié (+' + Math.ceil(s.config.pointsBuzz / 2) + ')</button>'
-            : ''),
-          (canDecide ? '' : '  <button id="skipWait" class="mt-3 text-white/40 text-xs underline">Trancher maintenant</button>'),
+          /* C'est l'hôte qui a répondu : aucun bouton de verdict pour lui.
+             Le verdict vient des autres — ou du juge, s'il y en a un. */
+          (moiQuiReponds
+            ? '  <div class="glass rounded-2xl p-4" style="border-color:rgba(34,211,238,.5)">'
+              + '<p class="text-neon-cyan font-extrabold">🔒 Tu as répondu — tu ne juges pas</p>'
+              + '<p class="text-white/50 text-sm mt-1">' + (jugeAilleurs
+                  ? 'C\'est ' + esc((s.dj && s.dj.id !== ME ? s.dj.name : (s.source ? s.source.name : 'l\'autre juge'))) + ' qui tranche depuis son téléphone.'
+                  : 'Ce sont les autres joueurs qui tranchent : le verdict tombe dès que tout le monde a voté.') + '</p></div>'
+            : [
+              '  <div class="grid grid-cols-2 gap-3 ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">',
+              '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
+              '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
+              '  </div>',
+              ((s.answerMode || 'both') === 'both'
+                ? '  <button id="half" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">≈ À moitié (+' + Math.ceil(s.config.pointsBuzz / 2) + ')</button>'
+                : ''),
+              (canDecide ? '' : '  <button id="skipWait" class="mt-3 text-white/40 text-xs underline">Trancher maintenant</button>')
+            ].join('')),
           '</div>'
         ].join('');
       } else if (s.phase === 'racing') {
@@ -2634,11 +2760,17 @@
                    + '<span class="font-bold text-sm flex-1 truncate">' + esc(a.name) + '</span>'
                    + '<span class="text-neon-cyan text-xs font-bold">' + (i === 0 ? '⚡ ' : '') + (a.ms / 1000).toFixed(1) + 's</span></div>'
                    + '<div class="text-white/80 text-sm mb-2 truncate">' + (a.text ? '« ' + esc(a.text) + ' »' : '<span class="text-white/30">(vide)</span>') + '</div>'
-                   + '<div class="grid grid-cols-3 gap-1">'
-                   + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓ Tout bon</button>'
-                   + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈ À moitié</button>'
-                   + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗ Faux</button>'
-                   + '</div></div>';
+                   /* La réponse du correcteur est notée par l'app, verrouillée :
+                      il ne se met pas la note qui l'arrange. */
+                   + (id === s._autoGraded
+                       ? '<div class="rounded-lg bg-black/30 p-2 text-center"><span class="text-neon-cyan text-xs font-bold">🔒 Ta réponse — notée par l\'app : '
+                         + (g === 'ok' ? '✓ tout bon' : g === 'half' ? '≈ à moitié' : '✗ faux') + '</span></div>'
+                       : '<div class="grid grid-cols-3 gap-1">'
+                         + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓ Tout bon</button>'
+                         + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈ À moitié</button>'
+                         + '<button class="gradeBtn py-2 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗ Faux</button>'
+                         + '</div>')
+                   + '</div>';
                }).join('') : '<p class="text-white/40 text-center py-4">Personne n\'a répondu.</p>'),
           '  <button id="applyTurbo" class="mt-3 w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Attribuer les points 🏅</button>',
           '</div>'
@@ -2657,6 +2789,7 @@
                    + '<span class="text-white/40 text-xs">' + (r.ms / 1000).toFixed(1) + 's</span>'
                    + '<span class="font-extrabold ' + (r.pts > 0 ? 'text-neon-gold' : 'text-white/30') + ' w-12 text-right">+' + r.pts + '</span></div>';
                }).join('') : '<p class="text-white/40 text-center">Aucune réponse</p>') + '</div>',
+               bonusBanner(s),
           '  <div class="grid grid-cols-2 gap-3 mt-4">',
           (s.dj && s.dj.id !== ME
             ? '    <div class="py-4 rounded-xl glass text-center text-sm text-white/50">🎧 ' + esc(s.dj.name) + ' lance le titre suivant</div>'
@@ -2670,11 +2803,16 @@
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
           '  <p class="text-white/50 uppercase text-sm">Réponse de ' + esc(s.buzzer.name) + '</p>',
           '  <div class="text-3xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-xl">(à l\'oral)</span>') + '</div>',
-          '  <p class="text-white/55 mb-3">🎶 ' + esc(s.source ? s.source.name : '') + ' valide… <span class="text-white/35 text-sm block">(ou tranche toi-même)</span></p>',
-          '  <div class="grid grid-cols-2 gap-3">',
-          '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
-          '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
-          '  </div>',
+          /* Même verrou qu'au vote : si c'est l'hôte qui a répondu, il ne tranche pas. */
+          (hostIsAnswering()
+            ? '  <div class="glass rounded-2xl p-4" style="border-color:rgba(34,211,238,.5)">'
+              + '<p class="text-neon-cyan font-extrabold">🔒 Tu as répondu — tu ne juges pas</p>'
+              + '<p class="text-white/50 text-sm mt-1">C\'est ' + esc(s.source ? s.source.name : 'celui qui fredonne') + ' qui tranche depuis son téléphone.</p></div>'
+            : '  <p class="text-white/55 mb-3">🎶 ' + esc(s.source ? s.source.name : '') + ' valide… <span class="text-white/35 text-sm block">(ou tranche toi-même)</span></p>'
+              + '  <div class="grid grid-cols-2 gap-3">'
+              + '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>'
+              + '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>'
+              + '  </div>'),
           '</div>'
         ].join('');
       } else if (s.phase === 'year_guess') {
@@ -2702,7 +2840,8 @@
                revealCard(s.reveal),
           (winNames.length ? '  <p class="text-neon-lime font-bold mb-3 mt-2">🏆 ' + esc(winNames.join(', ')) + ' (+' + s.config.pointsBuzz + ')</p>' : '  <p class="text-white/50 mb-3 mt-2">Personne n\'a deviné</p>'),
           '  <div class="space-y-1 text-sm mb-4 text-left">' + yrRows + '</div>',
-          '  <div class="grid grid-cols-2 gap-3">',
+               bonusBanner(s),
+          '  <div class="grid grid-cols-2 gap-3 mt-3">',
           (s.dj && s.dj.id !== ME
             ? '    <div class="py-4 rounded-xl glass text-center text-sm text-white/50">🎧 ' + esc(s.dj.name) + ' lance le titre suivant</div>'
             : '    <button id="next" class="py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Manche suivante ▶</button>'),
@@ -2720,6 +2859,7 @@
             ? '  <p class="text-sm font-bold mt-1">' + (s.result.combo ? '<span class="text-neon-gold">🔥 combo ×' + s.result.streak + ' (+' + s.result.combo + ')</span> ' : '') + (s.result.joker ? '<span class="text-neon-cyan">' + s.result.joker + '</span>' : '') + '</p>'
             : ''),
                revealCard(s.reveal),
+               bonusBanner(s),
           (!s.result.correct && !s.reveal
             ? '  <button id="reopen" class="mt-5 w-full py-3.5 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">🔔 Rebond : rouvrir le buzz aux autres</button>'
             : ''),
@@ -2756,7 +2896,9 @@
         '      <div class="text-right"><div class="text-xs text-white/40 uppercase">Manche</div><div class="text-2xl font-extrabold text-neon-cyan">' + (s.round || '–') + '</div></div>',
         '    </div>',
         '  </div>',
-        (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
+        (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">'
+          + (function () { var sp = s._djSpan || s.djEvery || 5, f = sp - (s._djLeft || 0); return s.djEvery === -1 ? f + '/🎲' : f + '/' + sp; })()
+          + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
         (s.blindRound ? '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(255,46,154,.6)">'
           + '<div class="text-2xl">🕶️</div><p class="bt-title font-extrabold text-neon-pink">FINALE À L\'AVEUGLE</p>'
           + '<p class="text-white/55 text-sm">Pas de DJ : tout le monde joue, l\'app corrige.</p></div>' : ''),
@@ -2822,15 +2964,27 @@
         };
       }
       bind('#forceVote', function () { if (s.buzzOpenAt) s.buzzMs = Date.now() - s.buzzOpenAt; s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; s.voteAt = Date.now(); publish(); });
-      bind('#ok', function () { validate(true); });
-      bind('#ko', function () { validate(false); });
-      bind('#half', function () { validate(true, true); });
+      /* Ceinture ET bretelles : les boutons de verdict ne sont plus affichés quand
+         l'hôte a répondu, mais on refuse aussi l'action si elle arrive quand même. */
+      var sansAutoJuge = function (fn) {
+        return function () {
+          if (hostIsAnswering()) { toast('Tu as répondu : ce sont les autres qui tranchent', 'err'); return; }
+          fn();
+        };
+      };
+      bind('#ok', sansAutoJuge(function () { validate(true); }));
+      bind('#ko', sansAutoJuge(function () { validate(false); }));
+      bind('#half', sansAutoJuge(function () { validate(true, true); }));
       bind('#reopen', reopenBuzz);
       bind('#wheelToggle', function () { s.wheel = s.wheel ? 0 : 1; if (!s.wheel) { s.challenge = null; s.mult = 1; } publish(); });
       bind('#closeRace', closeRacing);
       bind('#applyTurbo', applyTurbo);
       Array.prototype.forEach.call(document.querySelectorAll('.gradeBtn'), function (b) {
-        b.onclick = function () { s.grades[b.getAttribute('data-id')] = b.getAttribute('data-g'); publish(); };
+        b.onclick = function () {
+          var tid = b.getAttribute('data-id');
+          if (tid === s._autoGraded) return;   // sa propre réponse reste celle de l'app
+          s.grades[tid] = b.getAttribute('data-g'); publish();
+        };
       });
       bind('#skipWait', function () { s.voteAt = Date.now() - ((s.config && s.config.voteSecs || 10) * 1000); renderHost(); });
       bind('#next', launchRound);
@@ -3049,7 +3203,16 @@
       var center = '';
       // Si je suis le DJ de la série, je ne joue pas : je choisis les morceaux.
       if (imDJ && s.phase !== 'lobby' && s.phase !== 'ended') {
-        var djHdr = '<div class="text-center mb-3"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">titre ' + (((s.djCount - 1) % (s.djEvery || 5)) + 1) + '/' + (s.djEvery || 5) + ' de ta série</p></div>';
+        /* Série tirée au sort : on lit le compteur réel (_djSpan / _djLeft) au lieu
+           d'un modulo sur djEvery, qui ne veut plus rien dire en mode aléatoire.
+           En aléatoire on ne dit pas la longueur — c'est tout l'intérêt. */
+        var djSpan = s._djSpan || s.djEvery || 5;
+        var djFait = djSpan - (s._djLeft || 0);
+        var djHdr = '<div class="text-center mb-3"><div class="text-4xl mb-1">🎧</div><p class="bt-title text-lg font-extrabold text-neon-cyan glow-cyan">TU ES LE DJ</p><p class="text-white/40 text-xs">'
+          + (s.djEvery === -1
+              ? 'titre ' + djFait + ' · 🎲 la main peut tourner à tout moment'
+              : 'titre ' + djFait + '/' + djSpan + ' de ta série')
+          + '</p></div>';
         // Sélection du morceau par le DJ, sur son propre téléphone.
         var inApp = (s.audioMode || 'device') === 'device';
         var djTrackBox = myTrack
@@ -3077,11 +3240,15 @@
                 return '<div class="rounded-xl bg-black/25 p-3 mb-2">'
                   + '<div class="flex items-center gap-2 mb-1"><span class="font-bold text-sm flex-1 truncate">' + esc(a.name) + '</span><span class="text-neon-cyan text-xs font-bold">' + (i === 0 ? '⚡ ' : '') + (a.ms / 1000).toFixed(1) + 's</span></div>'
                   + '<div class="text-white/80 text-sm mb-2 truncate">' + (a.text ? '« ' + esc(a.text) + ' »' : '<span class="text-white/30">(vide)</span>') + '</div>'
-                  + '<div class="grid grid-cols-3 gap-1">'
-                  + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓ Tout bon</button>'
-                  + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈ À moitié</button>'
-                  + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗ Faux</button>'
-                  + '</div></div>';
+                  + (id === s._autoGraded
+                      ? '<div class="rounded-lg bg-black/30 p-2 text-center"><span class="text-neon-cyan text-xs font-bold">🔒 Ta réponse — notée par l\'app : '
+                        + (g === 'ok' ? '✓ tout bon' : g === 'half' ? '≈ à moitié' : '✗ faux') + '</span></div>'
+                      : '<div class="grid grid-cols-3 gap-1">'
+                        + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'ok' ? 'bg-neon-lime text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ok">✓ Tout bon</button>'
+                        + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'half' ? 'bg-neon-gold text-black' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="half">≈ À moitié</button>'
+                        + '<button class="djGrade py-2 rounded-lg text-xs font-bold ' + (g === 'ko' ? 'bg-rose-500' : 'bg-white/10') + '" data-id="' + esc(id) + '" data-g="ko">✗ Faux</button>'
+                        + '</div>')
+                  + '</div>';
               }).join('') : '<p class="text-white/40 text-center py-3">Personne n\'a répondu.</p>')
             + '<button id="djApply" class="mt-2 w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Attribuer les points 🏅</button></div>';
         } else if (s.phase === 'armed' || s.phase === 'buzzing') {
@@ -3113,6 +3280,7 @@
                   + '<p class="text-white/55 text-sm">' + esc(s.buzzer ? s.buzzer.name : '') + '</p>'
                 : '<div class="text-4xl mb-1">🏅</div><p class="text-xl font-extrabold">Points attribués</p>')
             + revealCard(s.reveal)
+            + bonusBanner(s)
             + '</div>'
             + djTrackBox
             + '<button id="djNext" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-lime to-neon-cyan text-black font-extrabold active:animate-pop">Titre suivant ▶</button>'
@@ -3165,6 +3333,7 @@
                 var r = tsP[id];
                 return '<div class="flex items-center gap-2 rounded-xl px-3 py-1.5 mb-1 ' + (id === ME ? 'bg-neon-violet/25 ring-1 ring-neon-violet' : 'bg-black/20') + '"><span class="flex-1 font-bold text-sm truncate">' + (r.first ? '⚡ ' : '') + esc(r.name) + '</span><span class="text-white/40 text-xs">' + (r.ms / 1000).toFixed(1) + 's</span><span class="font-extrabold text-neon-gold w-10 text-right">+' + r.pts + '</span></div>';
               }).join('') + '</div>',
+               bonusBanner(s),
           '</div>'
         ].join('');
       } else if (s.phase === 'armed') {
@@ -3240,7 +3409,7 @@
         center = '<div class="text-center animate-slidein"><p class="text-white/55 uppercase text-sm">L\'année était</p><div class="text-6xl font-extrabold text-neon-gold my-2 text-glow">' + (s.year || '?') + '</div>' + (myG != null ? '<p class="text-white/70">Ton choix : <span class="font-bold">' + myG + '</span></p>' : '<p class="text-white/40">Tu n\'as pas répondu</p>') + (iWon ? '<p class="text-neon-lime font-extrabold text-xl mt-2">🏆 Gagné ! +' + s.config.pointsBuzz + '</p>' : '') + revealCard(s.reveal) + '</div>';
       } else if (s.phase === 'reveal') {
         var goodForMe = isBuzzer && s.result.correct;
-        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p>' + revealCard(s.reveal) + '</div>';
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p>' + revealCard(s.reveal) + bonusBanner(s) + '</div>';
       } else if (s.phase === 'ended') {
         center = [
           '<div class="w-full text-center animate-slidein">',
@@ -3444,6 +3613,16 @@
         score équitable = score × (occasions max) / (ses occasions)
      Si tout le monde a joué le même nombre de titres, rien ne change.
      ------------------------------------------------------------------ */
+  /* Bandeau des bonus regagnés — même rendu chez l'hôte et chez les joueurs,
+     pour que tout le monde voie d'où vient le joker qui arrive. */
+  function bonusBanner(s) {
+    var m = s && s.bonusMsg;
+    if (!m || !m.length) return '';
+    return '<div class="glass rounded-2xl p-3 mt-3 text-center" style="border-color:rgba(251,191,36,.55)">'
+      + '<p class="text-xs font-bold uppercase text-neon-gold mb-1">🎁 Bonus regagnés</p>'
+      + m.map(function (x) { return '<p class="text-sm font-bold text-white/80">' + esc(x) + '</p>'; }).join('')
+      + '</div>';
+  }
   function fairInfo(players) {
     var arr = Object.keys(players || {}).map(function (k) { return players[k]; });
     var maxPlayed = 0, balanced = true, firstPlayed = null;
@@ -3492,12 +3671,20 @@
   function tournoiPlan(s) {
     if (!s || !s.djRotate) return null;
     var nbJ = Object.keys(s.players || {}).length;
-    var parDj = s.djEvery || 5;
+    // Série tirée au sort : on ne peut annoncer qu'une fourchette (1 à 5 titres par DJ).
+    var alea = s.djEvery === -1;
+    var parDj = alea ? 3 : (s.djEvery || 5);
     var fin = (s.finalN != null ? s.finalN : 0);
-    return { joueurs: nbJ, parDj: parDj, dj: nbJ * parDj, aveugle: fin, total: nbJ * parDj + fin };
+    return { joueurs: nbJ, parDj: parDj, alea: alea, dj: nbJ * parDj, aveugle: fin,
+             total: nbJ * parDj + fin, mini: nbJ * 1 + fin, maxi: nbJ * 5 + fin };
   }
   function tournoiTexte(p) {
     if (!p || !p.joueurs) return '';
+    if (p.alea) {
+      return p.joueurs + ' joueur' + (p.joueurs > 1 ? 's' : '') + ' × 🎲 1 à 5 titres'
+        + (p.aveugle ? ' + ' + p.aveugle + ' à l\'aveugle' : '')
+        + ' = <b>' + p.mini + ' à ' + p.maxi + ' manches</b>';
+    }
     return p.joueurs + ' joueur' + (p.joueurs > 1 ? 's' : '') + ' × ' + p.parDj + ' titres = ' + p.dj
       + (p.aveugle ? ' + ' + p.aveugle + ' à l\'aveugle' : '') + ' = <b>' + p.total + ' manches</b>';
   }

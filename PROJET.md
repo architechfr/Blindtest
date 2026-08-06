@@ -77,7 +77,23 @@ les joueurs veulent démarrer sans lire.
   (3 joueurs × 5 titres + 5 = **20 manches**). Affiché dans le salon et en cours de partie.
 - **Équité** — `played` / `djTurns` par joueur ; le classement final est **ajusté**
   (`fairScore`) si tout le monde n'a pas eu le même nombre d'occasions.
+- **Anti-triche : personne ne juge sa propre réponse.** Celui qui crée la partie tient
+  le serveur, mais ça ne lui donne aucun pouvoir sur les points. Dès qu'il répond :
+  à l'aveugle l'app tranche (`hostAnswer` fait exactement ce que fait un joueur —
+  c'était **le trou** : il n'avait ni suggestion ni validation auto et arrivait
+  toujours sur un écran qu'il pouvait trancher) ; sinon c'est le DJ / le fredonneur,
+  ou à défaut la **majorité des votes des autres**, résolue automatiquement.
+  En Turbo sa propre note est celle de l'app (`_autoGraded`, bouton verrouillé).
+  En mode Année, l'année du morceau s'impose s'il a deviné lui aussi.
+  Les scores ne se corrigent pas à la main non plus.
 - **Combos** (série de bonnes réponses) · **Jokers** (🃏 ×2, 🛡️ bouclier)
+- **Bonus qui reviennent** (`grantBonuses`) — un joker consommé était perdu pour toute
+  la partie. Deux robinets opposés : **3 bonnes réponses d'affilée → 🃏 ×2** (récompense
+  les forts) et **distancé de 3 × la valeur d'une bonne réponse → 🛡️** (fait revenir les
+  autres, seulement si on n'a plus rien en main). Plafonné à 3.
+- **Rotation DJ** : off · chaque titre · tous les 2 · 3 · 5 · **🎲 aléatoire** (1 à 5,
+  retiré au sort à chaque passage de main). Le compteur est `_djLeft` / `_djSpan`, pas
+  un modulo sur `djEvery` — un modulo ne peut pas décrire une série tirée au sort.
 - **Roue des défis** — 10 défis tirés au sort (double points, mort subite, titre seul…)
 - **Barème** : bonne +5 / mauvaise −2 / bon vote +2 / **mauvais vote −1**
   Les scores ne sont **pas** modifiables à la main : pouvoir les corriger jetait un
@@ -89,6 +105,8 @@ les joueurs veulent démarrer sans lire.
   d'artistes + morceaux déjà passés, conservés **d'une partie à l'autre et au
   rechargement**. Avant, tout repartait à zéro à chaque partie et les mêmes
   artistes revenaient aussitôt. Remise à zéro dans Réglages.
+  Le tirage automatique demande **50 titres par artiste** (`AUTO_LIMIT`) au lieu des
+  12 de l'affichage : avec 12, on retombait forcément sur les mêmes tubes.
 - **Validation automatique** — `fuzzyHit()` : Levenshtein + nettoyage des mentions
   d'édition + comparaison par mots porteurs. **24/24 sur les cas de test.**
 
@@ -116,7 +134,14 @@ les joueurs veulent démarrer sans lire.
 9. **Une sélection qui masque ses propres options** — choisir une playlist faisait
    disparaître la rangée de puces : impossible d'en ajouter une deuxième. Garder les
    options visibles et cocher celles qui sont actives.
-10. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+10. **Celui qui tient le serveur ne doit pas tenir l'arbitrage.** Le pouvoir se
+   glissait par un chemin discret : l'hôte suivait un code différent des joueurs
+   (`hostAnswer` vs l'intention `answer`). Toute asymétrie hôte/joueur est suspecte.
+11. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
+   `if (!el) return` sur le décompte : quand l'élément disparaissait, le verdict
+   automatique n'était plus jamais rendu. Ne pas conditionner une règle du jeu à la
+   présence d'un élément à l'écran.
+12. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 

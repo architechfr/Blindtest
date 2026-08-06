@@ -137,11 +137,16 @@ les joueurs veulent démarrer sans lire.
 10. **Celui qui tient le serveur ne doit pas tenir l'arbitrage.** Le pouvoir se
    glissait par un chemin discret : l'hôte suivait un code différent des joueurs
    (`hostAnswer` vs l'intention `answer`). Toute asymétrie hôte/joueur est suspecte.
-11. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
+11. **Le décor passait devant le texte.** L'écran de création (formulaire long et
+   dense) était posé à même le fond synthwave : soleil clair, bande orange et grille
+   animée derrière du `text-white/40` en `text-xs`. Une surface sombre (`.bt-setup`)
+   + contrastes remontés règlent ça **par écran**, sans toucher 30 chaînes. Les
+   décors animés vont bien derrière un titre, jamais derrière un formulaire.
+12. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
    `if (!el) return` sur le décompte : quand l'élément disparaissait, le verdict
    automatique n'était plus jamais rendu. Ne pas conditionner une règle du jeu à la
    présence d'un élément à l'écran.
-12. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+13. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 

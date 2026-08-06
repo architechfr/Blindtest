@@ -120,6 +120,26 @@
     .bt-vignette { position: fixed; inset: 0; z-index: -1; pointer-events: none;
       background: radial-gradient(120% 80% at 50% 35%, transparent 55%, rgba(0,0,0,.55) 100%); }
 
+    /* ============ ÉCRAN DE CRÉATION : LISIBILITÉ ============
+       Ce formulaire est long et dense, et il était posé À MÊME LE DÉCOR : le soleil
+       clair, la bande orange et la grille animée passaient derrière du texte gris fin
+       (text-white/40 en text-xs). Illisible en soirée, à bout de bras.
+       On pose donc une surface sombre stable, on remonte les contrastes et on
+       grossit les explications. Réglé ici, par écran, plutôt que sur la trentaine de
+       chaînes concernées : l'écran reste d'un seul tenant et rien d'autre ne bouge.
+       Pas de backdrop-filter (cf. le piège batterie) : un fond opaque suffit. */
+    .bt-setup { background: rgba(6,1,16,.93); border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.10); box-shadow: 0 12px 44px rgba(0,0,0,.6); }
+    .bt-setup .text-xs { font-size: .8125rem; line-height: 1.5; }
+    .bt-setup [class*="text-white/35"], .bt-setup [class*="text-white/40"],
+    .bt-setup [class*="text-white/45"] { color: rgba(255,255,255,.74) !important; }
+    .bt-setup [class*="text-white/50"], .bt-setup [class*="text-white/55"] { color: rgba(255,255,255,.82) !important; }
+    .bt-setup [class*="text-white/60"], .bt-setup [class*="text-white/65"],
+    .bt-setup [class*="text-white/70"], .bt-setup [class*="text-white/75"] { color: rgba(255,255,255,.9) !important; }
+    .bt-setup .opacity-80 { opacity: .95; }
+    /* Boutons non sélectionnés : bg-black/30 laissait remonter le décor derrière le texte. */
+    .bt-setup [class*="bg-black/30"] { background-color: rgba(0,0,0,.58); }
+
     /* ====================== CADRE "APP MOBILE" ====================== */
     #app { position: relative; z-index: 1; width: 100%; max-width: var(--bt-max);
       margin: 0 auto; min-height: 100dvh;
@@ -1184,7 +1204,7 @@
   function renderHostSetup() {
     var lastHost = store.get('hostName', '');
     app.innerHTML = [
-      '<div class="flex-1 flex flex-col px-6 py-8 max-w-md mx-auto w-full">',
+      '<div class="bt-setup flex-1 flex flex-col px-6 py-8 max-w-md mx-auto w-full">',
       '  <button id="back" class="text-white/50 text-left mb-6">← Retour</button>',
       '  <h2 class="text-3xl font-extrabold mb-1">Nouvelle soirée 🎉</h2>',
       '  <p class="text-white/50 mb-8">Tu seras l\'animateur : tu lances les morceaux et valides les réponses.</p>',

@@ -121,6 +121,17 @@ les joueurs veulent démarrer sans lire.
   artistes revenaient aussitôt. Remise à zéro dans Réglages.
   Le tirage automatique demande **50 titres par artiste** (`AUTO_LIMIT`) au lieu des
   12 de l'affichage : avec 12, on retombait forcément sur les mêmes tubes.
+- **Source externe** (enceinte, autre appli) — l'app ne choisit **rien** :
+  `prefetchAuto()` sort tout de suite si `!canPlayInApp()`. Elle continuait à tirer un
+  morceau au hasard (une playlist restait enregistrée d'une partie précédente), et ce
+  morceau s'affichait comme « la réponse » sur tous les téléphones alors que la
+  chanson venait de l'enceinte. Il faussait aussi la correction automatique. L'hôte
+  enregistre lui-même le titre pour la révélation.
+- **Connexion joueur** — la demande de `join` est **relancée toutes les 2,5 s** tant
+  qu'aucun état n'arrive, et au bout de 3 essais l'écran explique (« vérifie le code
+  et que le téléphone de l'hôte est allumé ») avec un bouton *Réessayer*. Avant,
+  l'écran restait sur « Connexion… » indéfiniment : vu du joueur, « le code ne
+  marche pas ».
 - **Validation automatique** — `fuzzyHit()` : Levenshtein + nettoyage des mentions
   d'édition + comparaison par mots porteurs. **24/24 sur les cas de test.**
 
@@ -168,11 +179,17 @@ les joueurs veulent démarrer sans lire.
    noter sa propre réponse. Garde-fou `jePilote = !s.dj || s.dj.id === ME`, à
    appliquer à **toute** commande de manche (clore, corriger, trancher, enchaîner).
    Le compteur de réponses attendait aussi le DJ (« 0/2 » à deux joueurs).
-15. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
+15. **Un réglage qui survit à la partie et parle plus fort que le mode courant** — la
+   playlist enregistrée continuait d'alimenter le tirage en source externe. Toute
+   préparation automatique doit d'abord demander : *est-ce que c'est encore mon rôle ?*
+16. **Une attente sans fin est lue comme une panne** — « Connexion… » sans limite ni
+   explication, c'est « le code ne marche pas ». Toute attente réseau doit relancer,
+   puis dire ce qui cloche.
+17. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
    `if (!el) return` sur le décompte : quand l'élément disparaissait, le verdict
    automatique n'était plus jamais rendu. Ne pas conditionner une règle du jeu à la
    présence d'un élément à l'écran.
-16. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+18. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 

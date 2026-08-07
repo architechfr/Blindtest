@@ -1707,6 +1707,13 @@
        dès que l'hôte lance la manche (la recherche Deezer est asynchrone). */
     function prefetchAuto() {
       if (roundTrack || autoLoading) return;
+      /* SOURCE EXTERNE : l'app ne choisit RIEN. Elle continuait à tirer un morceau
+         au hasard (une playlist restait enregistrée d'une partie précédente), et ce
+         morceau finissait affiché comme « la réponse » sur tous les téléphones —
+         alors que la chanson venait de l'enceinte et n'avait aucun rapport. Il
+         faussait aussi la correction automatique. Seule exception : les manches à
+         l'aveugle, où l'app DOIT fournir le son (canPlayInApp en tient compte). */
+      if (!canPlayInApp()) return;
       var arts = currentArtists();
       if (!arts || !arts.length) return;
       var pl = { artists: arts };
@@ -3275,7 +3282,19 @@
       }
     }, 500);
 
-    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); } };
+    /* Si l'hôte ne répond pas, l'écran restait sur « Connexion… » indéfiniment, sans
+       rien dire : vu du joueur, « le code ne marche pas ». On relance la demande
+       toutes les 2,5 s (le premier envoi peut partir avant que l'hôte n'écoute) et,
+       au bout de trois essais, on explique au lieu de tourner dans le vide. */
+    var joinTries = 0, joinLate = false;
+    var joinTimer = setInterval(function () {
+      if (lastState) { clearInterval(joinTimer); return; }
+      joinTries++;
+      try { chan.sendIntent({ action: 'join', id: ME, name: name }); } catch (e) {}
+      if (joinTries >= 3 && !joinLate) { joinLate = true; renderPlayer(); }
+    }, 2500);
+
+    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); clearInterval(joinTimer); } };
 
     function me() { return lastState && lastState.players ? lastState.players[ME] : null; }
 
@@ -3289,8 +3308,17 @@
       });
       var s = lastState;
       if (!s) {
-        app.innerHTML = '<div class="flex-1 flex flex-col items-center justify-center px-6 text-center"><div class="text-5xl mb-4 animate-pulse">📡</div><p class="text-white/70">Connexion à la partie…</p><button id="back" class="mt-8 text-white/40 text-sm">← Quitter</button></div>';
+        app.innerHTML = '<div class="flex-1 flex flex-col items-center justify-center px-6 text-center">'
+          + '<div class="text-5xl mb-4 animate-pulse">📡</div>'
+          + '<p class="text-white/70">Connexion à la partie <b class="text-neon-cyan">' + esc(code) + '</b>…</p>'
+          + (joinLate
+              ? '<div class="glass rounded-2xl p-4 mt-5 max-w-xs"><p class="font-extrabold text-neon-gold mb-1">Pas de réponse</p>'
+                + '<p class="text-white/60 text-sm">Vérifie le code, et que le téléphone qui héberge la partie est <b>allumé, avec l\'app ouverte</b>. On continue d\'essayer.</p>'
+                + '<button id="retry" class="mt-3 w-full py-2.5 rounded-xl bg-neon-cyan text-black font-extrabold text-sm">Réessayer</button></div>'
+              : '')
+          + '<button id="back" class="mt-8 text-white/40 text-sm">← Quitter</button></div>';
         bind('#back', function () { location.hash = ''; });
+        bind('#retry', function () { try { chan.sendIntent({ action: 'join', id: ME, name: name }); } catch (e) {} toast('Nouvelle tentative…', 'info'); });
         return;
       }
       var mine = me();

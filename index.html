@@ -1278,12 +1278,10 @@
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-mode="classic">🔊 Classique</button>',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="turbo">⚡ Turbo (tous)</button>',
-      '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="fredonne">🎶 Fredonne</button>',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-mode="year">📅 Année</button>',
       '  </div>',
       '  <p class="text-white/40 text-xs mb-2">⚡ <b>Turbo</b> : tout le monde répond en même temps, les points (jusqu\'à 100) dépendent de ta rapidité — personne ne reste sur le banc.</p>',
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
-      '  <div class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>🎶 Fredonne : changer de fredonneur toutes les</span><input id="fredEvery" type="number" min="1" max="99" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>chansons</span></div>',
 
       '  <button type="button" id="suWheel" class="w-full py-3.5 rounded-xl text-sm font-extrabold bg-black/30 text-white/60 mb-2">🎡 Roue des défis : OFF</button>',
       '  <p class="text-white/40 text-xs mb-1">Avant chaque titre, l\'app <b>tire une règle au sort</b> et l\'annonce à tout le monde. Exemples :</p>',
@@ -1778,15 +1776,23 @@
         publish();
       } else if (p.action === 'buzz') {
         // Premier buzz reçu pendant la phase "buzzing" gagne.
-        if (state.phase === 'buzzing' && !state.buzzer) {
-          if (state.mode === 'fredonne' && state.source && state.source.id === p.id) return; // le fredonneur ne buzze pas
-          if ((state.tried || []).indexOf(p.id) >= 0) return;                                 // déjà tenté sur cette manche
-          if (state.dj && state.dj.id === p.id) return;                                        // le DJ du moment connaît la réponse
+        if (state.phase === 'buzzing' && !state.buzzer && canBuzz(p.id)) {
           var pl = ensurePlayer(p.id, p.name);
           state.buzzer = { id: pl.id, name: pl.name };
           state.phase = 'answering';
           dzPause(); // coupe l'extrait dès le buzz
           beep(180, 0.35, 'square'); vibrate([0, 120, 60, 120]);
+          publish();
+        }
+      } else if (p.action === 'pass') {
+        /* « Je ne sais pas » : on renonce à cette manche. Quand plus personne ne peut
+           buzzer, l'app révèle le titre et clôt — au lieu de laisser tourner un extrait
+           que personne ne reconnaît. */
+        if (state.phase === 'buzzing' && !state.buzzer && canBuzz(p.id)) {
+          ensurePlayer(p.id, p.name);
+          state.tried = (state.tried || []).concat([p.id]);
+          beep(300, 0.08, 'sine');
+          if (!eligibleBuzzers().length) { noOneKnows(); return; }
           publish();
         }
       } else if (p.action === 'answer') {
@@ -1939,7 +1945,7 @@
       /* ROUE DES DÉFIS : on tire le défi de la manche et on l'applique. */
       if (state.wheel) {
         var prev = state.challenge ? state.challenge.id : null;
-        var c = pickChallenge(prev, Object.keys(state.players).length >= 2);
+        var c = pickChallenge(prev);
         state.challenge = { id: c.id, icon: c.icon, name: c.name, desc: c.desc, risky: !!c.risky };
         state.mode = c.mode;
         if (c.ans) state.answerMode = c.ans;
@@ -2047,6 +2053,33 @@
          · sinon → la majorité des votes des autres joueurs tranche
        --------------------------------------------------------------- */
     function hostIsAnswering() { return !!(state.buzzer && state.buzzer.id === ME); }
+
+    /* Qui peut ENCORE buzzer sur cette manche. Une seule définition, utilisée par le
+       buzz joueur, le buzz hôte, le « je passe » et le calcul du rebond : quand cette
+       règle existait en trois exemplaires, l'hôte y échappait (il pouvait rebuzzer
+       juste après avoir perdu) et le DJ comptait à tort comme rebondisseur possible. */
+    function eligibleBuzzers() {
+      return Object.keys(state.players).filter(function (id) {
+        if ((state.tried || []).indexOf(id) >= 0) return false;             // a déjà tenté ou passé
+        if (state.mode === 'fredonne' && state.source && state.source.id === id) return false;
+        if (state.dj && state.dj.id === id) return false;                    // le DJ connaît la réponse
+        return true;
+      });
+    }
+    function canBuzz(id) { return eligibleBuzzers().indexOf(id) >= 0; }
+
+    /* Personne ne trouve : on révèle le titre et on clôt la manche, au lieu de laisser
+       le morceau tourner en boucle sans que personne sache quoi répondre. */
+    function noOneKnows() {
+      dzPause();
+      state.buzzer = null; state.answer = null; state.votes = {}; state.suggest = null;
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      state.result = { correct: false, gain: 0, none: true, streak: 0 };
+      state.phase = 'reveal';
+      state.history.push({ round: state.round, none: true });
+      beep(200, 0.25, 'sawtooth');
+      publish();
+    }
     function otherJudge() {
       if (state.mode === 'fredonne' && state.source && state.source.id !== ME) return true;
       if (state.dj && state.dj.id !== ME) return true;
@@ -2071,13 +2104,24 @@
     }
 
     function hostBuzz() {
-      if (state.phase === 'buzzing' && !state.buzzer && hostCanPlay()) {
+      // canBuzz : l'hôte a longtemps échappé au filtre « déjà tenté » qui, lui,
+      // n'existait que côté joueur — il pouvait donc rebuzzer juste après avoir raté.
+      if (state.phase === 'buzzing' && !state.buzzer && hostCanPlay() && canBuzz(ME)) {
         var pl = ensurePlayer(ME, state.hostName);
         state.buzzer = { id: pl.id, name: pl.name };
         state.phase = 'answering';
         beep(180, 0.35, 'square'); vibrate([0, 120, 60, 120]);
         publish();
       }
+    }
+    /* L'hôte renonce comme n'importe quel joueur (il joue aussi, en duel notamment). */
+    function hostPass() {
+      if (state.phase !== 'buzzing' || state.buzzer || !canBuzz(ME)) return;
+      ensurePlayer(ME, state.hostName);
+      state.tried = (state.tried || []).concat([ME]);
+      beep(300, 0.08, 'sine');
+      if (!eligibleBuzzers().length) { noOneKnows(); return; }
+      publish();
     }
     /* L'hôte répond aussi en mode « tout le monde répond ». */
     function hostRace(text) {
@@ -2209,14 +2253,13 @@
       grantBonuses();
       state.result = { correct: correct, partial: !!partial, gain: gain, combo: combo, joker: jokerLbl, streak: b ? b.streak : 0 };
       dzPause();
-      // Reste-t-il quelqu'un qui pourrait rebondir ? (si oui et réponse fausse, on ne révèle pas encore)
-      var triedNow = (state.tried || []).concat(state.buzzer ? [state.buzzer.id] : []);
-      var candidates = Object.keys(state.players).filter(function (id) {
-        if (triedNow.indexOf(id) >= 0) return false;
-        if (state.mode === 'fredonne' && state.source && state.source.id === id) return false;
-        return true;
-      });
-      var canRebound = !correct && candidates.length > 0;
+      /* Reste-t-il quelqu'un qui pourrait rebondir ? On inscrit d'abord celui qui vient
+         de tenter dans `tried` : il ne rebondit pas sur sa propre erreur, et la liste
+         reste juste même si l'hôte enchaîne sans passer par « Rebond ». */
+      if (state.buzzer && (state.tried || []).indexOf(state.buzzer.id) < 0) {
+        state.tried = (state.tried || []).concat([state.buzzer.id]);
+      }
+      var canRebound = !correct && eligibleBuzzers().length > 0;
       if (roundTrack && !canRebound) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
       state.phase = 'reveal';
       state.history.push({
@@ -2537,7 +2580,8 @@
         '</div>'
       ].join('');
 
-      var MODES = [{ id: 'classic', name: '🔊 Classique' }, { id: 'turbo', name: '⚡ Turbo' }, { id: 'fredonne', name: '🎶 Fredonne' }, { id: 'year', name: '📅 Année' }];
+      // Fredonne retiré : jamais utilisé en soirée. Le code interne reste inerte.
+      var MODES = [{ id: 'classic', name: '🔊 Classique' }, { id: 'turbo', name: '⚡ Turbo' }, { id: 'year', name: '📅 Année' }];
       var modeBar = [
         '<div class="glass rounded-2xl p-3 mb-4">',
         '  <div class="text-xs font-bold uppercase text-white/50 mb-2">🎮 Mode de jeu</div>',
@@ -2663,6 +2707,19 @@
       }
 
       var phaseBlock = '';
+      /* L'hôte ne pilote la manche que s'il n'y a pas de DJ, ou si c'est LUI le DJ.
+         Sinon la manche appartient au DJ, qui a ses propres commandes sur son
+         téléphone. Sans ce garde-fou, l'hôte gardait « Clore et corriger » et l'écran
+         de correction alors qu'un autre était DJ : deux personnes pilotaient la même
+         manche, et l'hôte pouvait noter sa propre réponse au passage. */
+      var jePilote = !s.dj || s.dj.id === ME;
+      var nomDJ = s.dj ? esc(s.dj.name) : '';
+      var enAttenteDJ = function (quoi) {
+        return '<div class="glass rounded-2xl p-6 text-center animate-slidein">'
+          + '<div class="text-4xl mb-2">🎧</div>'
+          + '<p class="text-xl font-extrabold text-neon-cyan">' + nomDJ + ' ' + quoi + '</p>'
+          + '<p class="text-white/45 text-sm mt-1">C\'est le DJ de cette manche qui a la main.</p></div>';
+      };
       if (s.phase === 'lobby') {
         var nb = lb.length;
         var chips = nb
@@ -2691,7 +2748,19 @@
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2">⏳</div><p class="text-xl font-bold">' + (isFred ? '🎶 ' + esc(s.source ? s.source.name : '') + ' va fredonner' : 'Buzz verrouillé…') + '</p><p class="text-white/50">' + (isFred ? 'Tiens-toi prêt à buzzer !' + fredTag : 'Lance le morceau maintenant !') + '</p></div>';
       } else if (s.phase === 'buzzing') {
         var hostCanBuzz = hostCanPlay();
-        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>' + (hostCanBuzz ? '<div class="mt-5">' + buzzButton(false, 'BUZZ', 'Appuie vite !', 'hostBuzz') + '</div>' : '') + '</div>';
+        var hostDejaTente = (s.tried || []).indexOf(ME) >= 0;
+        var restants = eligibleBuzzers().length;
+        phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>'
+          + (hostCanBuzz && !hostDejaTente
+              ? '<div class="mt-5">' + buzzButton(false, 'BUZZ', 'Appuie vite !', 'hostBuzz') + '</div>'
+                /* Sans ça, quand personne ne reconnaît le morceau, l'extrait tournait
+                   en boucle sans aucune sortie : il fallait annuler la manche. */
+                + '<button id="hostPass" class="mt-5 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>'
+              : (hostCanBuzz
+                  ? '<p class="mt-5 text-white/45 text-sm">Tu as déjà tenté sur ce titre — au tour des autres.</p>'
+                  : ''))
+          + (restants ? '<p class="text-white/35 text-xs mt-3">' + restants + ' joueur(s) peuvent encore répondre</p>' : '')
+          + '</div>';
       } else if (s.phase === 'answering') {
         if (s.buzzer.id === ME) {
           phaseBlock = [
@@ -2726,9 +2795,9 @@
             : '  <div class="mb-3"><div id="voteLeft" class="text-4xl font-extrabold text-neon-cyan glow-cyan">' + left + '</div><p class="text-white/50 text-xs">temps de vote… laisse les autres répondre</p></div>'),
           /* C'est l'hôte qui a répondu : aucun bouton de verdict pour lui.
              Le verdict vient des autres — ou du juge, s'il y en a un. */
-          (moiQuiReponds
+          (moiQuiReponds || !jePilote
             ? '  <div class="glass rounded-2xl p-4" style="border-color:rgba(34,211,238,.5)">'
-              + '<p class="text-neon-cyan font-extrabold">🔒 Tu as répondu — tu ne juges pas</p>'
+              + '<p class="text-neon-cyan font-extrabold">' + (moiQuiReponds ? '🔒 Tu as répondu — tu ne juges pas' : '🎧 ' + nomDJ + ' tranche') + '</p>'
               + '<p class="text-white/50 text-sm mt-1">' + (jugeAilleurs
                   ? 'C\'est ' + esc((s.dj && s.dj.id !== ME ? s.dj.name : (s.source ? s.source.name : 'l\'autre juge'))) + ' qui tranche depuis son téléphone.'
                   : 'Ce sont les autres joueurs qui tranchent : le verdict tombe dès que tout le monde a voté.') + '</p></div>'
@@ -2746,13 +2815,15 @@
         ].join('');
       } else if (s.phase === 'racing') {
         var got = Object.keys(s.answers || {}).length;
+        // Le DJ ne répond pas : le compteur l'attendait quand même (« 0/2 » à deux).
+        var attendus = lb.filter(function (p) { return !(s.dj && s.dj.id === p.id); }).length;
         phaseBlock = [
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
           '  <div class="text-5xl mb-2 animate-pulse">⚡</div>',
           '  <p class="text-2xl font-extrabold text-neon-lime">TOUT LE MONDE RÉPOND !</p>',
           '  <p class="text-white/50 mb-3">Plus c\'est rapide, plus ça rapporte (jusqu\'à 100 pts)</p>',
           '  <div class="flex items-center justify-center gap-6 mb-4">',
-          '    <div><div class="text-3xl font-extrabold text-neon-cyan">' + got + '/' + lb.length + '</div><p class="text-white/40 text-xs">réponses</p></div>',
+          '    <div><div class="text-3xl font-extrabold text-neon-cyan">' + got + '/' + attendus + '</div><p class="text-white/40 text-xs">réponses</p></div>',
           // L'hôte joue aussi quand il ne connaît pas le morceau
           (hostCanPlay() ? '</div><div class="mb-3">' + ((s.answers || {})[ME]
             ? '<p class="text-neon-lime font-bold">Ta réponse est enregistrée ✓</p>'
@@ -2760,13 +2831,17 @@
               + '<button id="hostRaceSend" class="w-full py-3 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold">Envoyer ⚡</button>') + '<div class="flex items-center justify-center gap-6">' : ''),
           '    <div><div id="raceLeft" class="text-3xl font-extrabold text-neon-gold">' + Math.max(0, Math.ceil(((s.buzzOpenAt || Date.now()) + (s.turboSecs || 30) * 1000 - Date.now()) / 1000)) + '</div><p class="text-white/40 text-xs">secondes</p></div>',
           '  </div>',
-          '  <div class="flex flex-wrap justify-center gap-2 mb-4">' + lb.map(function (p) {
+          '  <div class="flex flex-wrap justify-center gap-2 mb-4">' + lb.filter(function (p) { return !(s.dj && s.dj.id === p.id); }).map(function (p) {
                 var a = (s.answers || {})[p.id];
                 return '<span class="px-2.5 py-1 rounded-full text-xs font-bold ' + (a ? 'bg-neon-lime/25 ring-1 ring-neon-lime' : 'bg-black/30 text-white/50') + '">' + esc(p.name) + (a ? ' ' + (a.ms / 1000).toFixed(1) + 's' : ' …') + '</span>';
               }).join('') + '</div>',
-          '  <button id="closeRace" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">Clore et corriger ✍️</button>',
+          (jePilote
+            ? '  <button id="closeRace" class="w-full py-4 rounded-xl bg-gradient-to-r from-neon-pink to-neon-violet font-extrabold active:animate-pop">Clore et corriger ✍️</button>'
+            : '  <p class="text-white/45 text-sm">🎧 ' + nomDJ + ' clôt la manche quand il veut.</p>'),
           '</div>'
         ].join('');
+      } else if (s.phase === 'grading' && !jePilote) {
+        phaseBlock = enAttenteDJ('corrige les réponses…');
       } else if (s.phase === 'grading') {
         var order = Object.keys(s.answers || {}).sort(function (a, b) { return s.answers[a].ms - s.answers[b].ms; });
         phaseBlock = [
@@ -2872,9 +2947,12 @@
       } else if (s.phase === 'reveal') {
         phaseBlock = [
           '<div class="glass rounded-2xl p-8 text-center animate-slidein">',
-          '  <div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div>',
-          '  <p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
-          '  <p class="text-white/60 mt-1">' + esc(s.buzzer.name) + ' ' + ((s.result.gain != null ? s.result.gain : 0) >= 0 ? '+' : '') + (s.result.gain != null ? s.result.gain : 0) + ' pts' + (s.result.partial ? ' <span class="text-neon-gold">(à moitié)</span>' : '') + '</p>',
+          // s.result.none = personne n'a trouvé (tout le monde a passé) : pas de buzzer.
+          '  <div class="text-6xl mb-2">' + (s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div>',
+          '  <p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
+          (s.result.none
+            ? '  <p class="text-white/50 mt-1">Aucun point — on passe au titre suivant.</p>'
+            : '  <p class="text-white/60 mt-1">' + esc(s.buzzer ? s.buzzer.name : '') + ' ' + ((s.result.gain != null ? s.result.gain : 0) >= 0 ? '+' : '') + (s.result.gain != null ? s.result.gain : 0) + ' pts' + (s.result.partial ? ' <span class="text-neon-gold">(à moitié)</span>' : '') + '</p>'),
           ((s.result.combo || s.result.joker || (s.result.streak || 0) >= 2)
             ? '  <p class="text-sm font-bold mt-1">' + (s.result.combo ? '<span class="text-neon-gold">🔥 combo ×' + s.result.streak + ' (+' + s.result.combo + ')</span> ' : '') + (s.result.joker ? '<span class="text-neon-cyan">' + s.result.joker + '</span>' : '') + '</p>'
             : ''),
@@ -2997,8 +3075,9 @@
       bind('#half', sansAutoJuge(function () { validate(true, true); }));
       bind('#reopen', reopenBuzz);
       bind('#wheelToggle', function () { s.wheel = s.wheel ? 0 : 1; if (!s.wheel) { s.challenge = null; s.mult = 1; } publish(); });
-      bind('#closeRace', closeRacing);
-      bind('#applyTurbo', applyTurbo);
+      // Comme pour le verdict : on masque ET on refuse, si un autre est DJ.
+      bind('#closeRace', function () { if (jePilote) closeRacing(); });
+      bind('#applyTurbo', function () { if (jePilote) applyTurbo(); });
       Array.prototype.forEach.call(document.querySelectorAll('.gradeBtn'), function (b) {
         b.onclick = function () {
           var tid = b.getAttribute('data-id');
@@ -3030,6 +3109,7 @@
         row.onclick = function () { openPlayerAdmin(row.getAttribute('data-pid')); };
       });
       bind('#hostBuzz', hostBuzz);
+      bind('#hostPass', function () { hostPass(); toast('Tu passes ce titre', 'info'); });
       bind('#hostRaceSend', function () { var e = $('#hostRaceAns'); hostRace(e ? e.value.trim() : ''); });
       var hra = $('#hostRaceAns'); if (hra) hra.onkeydown = function (e) { if (e.key === 'Enter') hostRace(hra.value.trim()); };
       var hAns = $('#hostAns'); if (hAns) hAns.focus();
@@ -3089,10 +3169,14 @@
       bind('#themeClear', function () { s.theme = ''; publish(); });
       bind('#abortRound', function () {
         // Retour au salon sans perdre les scores : débloque toute situation.
+        // roundTrack DOIT être vidé : sans ça le MÊME morceau repartait au lancement
+        // suivant — d'où l'impression qu'un titre « revient tout le temps ».
         dzPause();
+        roundTrack = null;
         state.round = Math.max(0, state.round - 1);
         resetRound(); state.phase = 'lobby';
-        publish(); toast('Manche annulée — tu peux relancer', 'info');
+        prefetchAuto();
+        publish(); toast('Manche annulée — un autre morceau est prêt', 'info');
       });
       bind('#quit', function () { if (confirm('Quitter et supprimer la partie ?')) { store.del('hostGame'); teardown(); location.hash = ''; } });
       _restore(); // rend la saisie en cours si l'écran vient d'être redessiné
@@ -3361,7 +3445,12 @@
         else center = buzzButton(true, '⏳', 'Prépare-toi…');
       } else if (s.phase === 'buzzing') {
         if (s.mode === 'fredonne' && isSource) center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-pulse">🎶</div><p class="text-2xl font-extrabold text-neon-lime">FREDONNE !</p><p class="text-white/55 mt-1">Les autres essaient de deviner</p></div>';
-        else center = buzzButton(false, 'BUZZ', 'Appuie vite !');
+        else if ((s.tried || []).indexOf(ME) >= 0)
+          center = buzzButton(true, '⏳', 'Tu as déjà tenté — au tour des autres');
+        else center = buzzButton(false, 'BUZZ', 'Appuie vite !')
+          // Sortie quand on ne reconnaît pas le morceau : dès que tout le monde
+          // a renoncé, l'app révèle le titre et passe au suivant.
+          + '<button id="pass" class="mt-5 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>';
       } else if (s.phase === 'answering') {
         if (isBuzzer && answered) {
           center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">📨</div><p class="text-xl font-bold">Réponse envoyée ✓</p><p class="text-white/50 mt-1">En attente de l\'animateur…</p></div>';
@@ -3429,7 +3518,7 @@
         center = '<div class="text-center animate-slidein"><p class="text-white/55 uppercase text-sm">L\'année était</p><div class="text-6xl font-extrabold text-neon-gold my-2 text-glow">' + (s.year || '?') + '</div>' + (myG != null ? '<p class="text-white/70">Ton choix : <span class="font-bold">' + myG + '</span></p>' : '<p class="text-white/40">Tu n\'as pas répondu</p>') + (iWon ? '<p class="text-neon-lime font-extrabold text-xl mt-2">🏆 Gagné ! +' + s.config.pointsBuzz + '</p>' : '') + revealCard(s.reveal) + '</div>';
       } else if (s.phase === 'reveal') {
         var goodForMe = isBuzzer && s.result.correct;
-        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (goodForMe ? 'Bien joué 🔥' : esc(s.buzzer.name)) + '</p>' + revealCard(s.reveal) + bonusBanner(s) + '</div>';
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (s.result.none ? 'On passe au titre suivant' : goodForMe ? 'Bien joué 🔥' : esc(s.buzzer ? s.buzzer.name : '')) + '</p>' + revealCard(s.reveal) + bonusBanner(s) + '</div>';
       } else if (s.phase === 'ended') {
         center = [
           '<div class="w-full text-center animate-slidein">',
@@ -3529,6 +3618,11 @@
       bind('#djHalf', function () { dzPause(); chan.sendIntent({ action: 'judge', id: ME, correct: true, partial: true, reveal: myReveal() }); myTrack = null; });
       Array.prototype.forEach.call(document.querySelectorAll('.djGrade'), function (b) {
         b.onclick = function () { chan.sendIntent({ action: 'grade', id: ME, target: b.getAttribute('data-id'), g: b.getAttribute('data-g') }); beep(660, 0.05, 'sine'); };
+      });
+
+      bind('#pass', function () {
+        chan.sendIntent({ action: 'pass', id: ME, name: name });
+        beep(300, 0.08, 'sine'); toast('Tu passes ce titre', 'info');
       });
 
       // Mode Turbo : envoi de la réponse par tout le monde
@@ -3671,14 +3765,11 @@
     { id: 'both',     icon: '🎵', name: 'Titre + Artiste', desc: 'Les deux sont exigés !',             mode: 'classic', ans: 'both' },
     { id: 'double',   icon: '💰', name: 'Double points',   desc: 'Tous les points comptent double',    mode: 'classic', mult: 2 },
     { id: 'sudden',   icon: '☠️', name: 'Mort subite',     desc: 'Points doublés… malus aussi !',      mode: 'classic', mult: 2, risky: true },
-    { id: 'turbo2',   icon: '🚀', name: 'Turbo doublé',    desc: 'Turbo avec points ×2',               mode: 'turbo',   mult: 2 },
-    { id: 'hum',      icon: '🎶', name: 'Fredonne',        desc: 'Un joueur fredonne, les autres devinent', mode: 'fredonne' }
+    { id: 'turbo2',   icon: '🚀', name: 'Turbo doublé',    desc: 'Turbo avec points ×2',               mode: 'turbo',   mult: 2 }
   ];
-  function pickChallenge(prevId, allowHum) {
+  function pickChallenge(prevId) {
     var pool = CHALLENGES.filter(function (c) {
-      if (c.id === prevId) return false;              // pas deux fois le même d'affilée
-      if (c.mode === 'fredonne' && !allowHum) return false;
-      return true;
+      return c.id !== prevId;                         // pas deux fois le même d'affilée
     });
     if (!pool.length) pool = CHALLENGES;
     return pool[(Math.random() * pool.length) | 0];
@@ -4108,9 +4199,8 @@
       sec('🎮 Les modes',
         '<b>🔊 Classique</b> — le 1<sup>er</sup> qui buzze répond.<br>'
         + '<b>⚡ Turbo</b> — tout le monde répond en même temps, jusqu\'à 100 pts selon la rapidité.<br>'
-        + '<b>🎶 Fredonne</b> — pas de musique : un joueur fredonne, les autres buzzent.<br>'
         + '<b>📅 Année</b> — devine l\'année de sortie, le plus proche gagne.'),
-      sec('🏆 Les points (Classique / Fredonne / Année)',
+      sec('🏆 Les points (Classique / Année)',
         'Bonne réponse <b class="text-neon-lime">+5</b> · Mauvaise <b class="text-rose-400">−2</b><br>'
         + 'Bon vote <b class="text-neon-lime">+2</b> · Mauvais vote <b class="text-rose-400">−1</b><br>'
         + '<span class="text-white/50 text-xs">Voter est un pari : écoute bien même quand ce n\'est pas ton tour !</span>'),
@@ -4122,7 +4212,7 @@
         + '<span class="text-white/50 text-xs">Soit 60 à 100 points par bonne réponse — tout le monde marque, l\'écart se fait au chrono.</span>'),
       sec('🎡 La roue des défis',
         'Si elle est activée, <b>un défi est tiré au hasard à chaque manche</b> — et il change les règles :<br>'
-        + '🔊 Classique · ⚡ Turbo · 📅 Année · 🎶 Fredonne<br>'
+        + '🔊 Classique · ⚡ Turbo · 📅 Année<br>'
         + '💿 Titre seul · 🎤 Artiste seul · 🎵 Titre + Artiste<br>'
         + '<b class="text-neon-gold">💰 Double points</b> · <b class="text-rose-400">☠️ Mort subite</b> (points ET malus doublés) · <b class="text-neon-gold">🚀 Turbo doublé</b><br>'
         + '<span class="text-white/50 text-xs">Jamais deux fois le même d\'affilée. Le défi s\'affiche sur tous les écrans avant de jouer.</span>'),

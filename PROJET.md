@@ -66,7 +66,12 @@ les joueurs veulent démarrer sans lire.
 
 ### Modes de jeu
 `classic` (buzz) · `turbo` (tout le monde répond, points à la vitesse 60→100) ·
-`fredonne` (sans musique) · `year` (deviner l'année)
+`year` (deviner l'année)
+
+> **Fredonne a été retiré** (jamais utilisé en soirée) : plus aucun point d'entrée —
+> ni dans la création, ni dans le sélecteur de mode, ni dans la roue des défis. Le
+> code interne (`state.source`, `mode === 'fredonne'`) reste en place mais **inerte** :
+> l'arracher aurait touché les chemins de buzz et de verdict tout juste corrigés.
 
 ### Mécaniques
 - **Rotation DJ** — le DJ choisit ses morceaux, les lance, **valide**, **enchaîne** et
@@ -94,6 +99,15 @@ les joueurs veulent démarrer sans lire.
 - **Rotation DJ** : off · chaque titre · tous les 2 · 3 · 5 · **🎲 aléatoire** (1 à 5,
   retiré au sort à chaque passage de main). Le compteur est `_djLeft` / `_djSpan`, pas
   un modulo sur `djEvery` — un modulo ne peut pas décrire une série tirée au sort.
+- **« 🤷 Je ne sais pas »** (intention `pass`) — chacun peut renoncer pendant le buzz.
+  Quand plus personne ne peut répondre, l'app **révèle le titre et clôt la manche**
+  (`noOneKnows`, `result.none`). Sans ça, un extrait que personne ne reconnaissait
+  tournait en boucle sans aucune sortie.
+- **Qui peut encore buzzer** = `eligibleBuzzers()` / `canBuzz(id)`, **une seule
+  définition** partagée par le buzz joueur, le buzz hôte, le « je passe » et le calcul
+  du rebond. La règle existait en trois exemplaires : l'hôte y échappait (il rebuzzait
+  juste après avoir perdu) et le DJ comptait à tort comme rebondisseur possible.
+  `validate()` inscrit désormais le perdant dans `tried` tout de suite.
 - **Roue des défis** — 10 défis tirés au sort (double points, mort subite, titre seul…)
 - **Barème** : bonne +5 / mauvaise −2 / bon vote +2 / **mauvais vote −1**
   Les scores ne sont **pas** modifiables à la main : pouvoir les corriger jetait un
@@ -142,11 +156,23 @@ les joueurs veulent démarrer sans lire.
    animée derrière du `text-white/40` en `text-xs`. Une surface sombre (`.bt-setup`)
    + contrastes remontés règlent ça **par écran**, sans toucher 30 chaînes. Les
    décors animés vont bien derrière un titre, jamais derrière un formulaire.
-12. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
+12. **Annuler une manche sans vider `roundTrack`** — le même morceau repartait au
+   lancement suivant, d'où « ce titre revient tout le temps ». Annuler doit **jeter**
+   le morceau et en préparer un autre.
+13. **Une règle de jeu écrite en plusieurs exemplaires finit par diverger** — « qui
+   peut buzzer » existait en trois endroits ; l'hôte échappait au filtre « déjà
+   tenté ». Une règle = une fonction (`canBuzz`).
+14. **L'hôte gardait les commandes du DJ.** En Turbo avec rotation, l'écran hôte
+   affichait « Clore et corriger » et la grille de correction alors qu'un AUTRE
+   joueur était DJ : deux personnes pilotaient la même manche, et l'hôte pouvait
+   noter sa propre réponse. Garde-fou `jePilote = !s.dj || s.dj.id === ME`, à
+   appliquer à **toute** commande de manche (clore, corriger, trancher, enchaîner).
+   Le compteur de réponses attendait aussi le DJ (« 0/2 » à deux joueurs).
+15. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
    `if (!el) return` sur le décompte : quand l'élément disparaissait, le verdict
    automatique n'était plus jamais rendu. Ne pas conditionner une règle du jeu à la
    présence d'un élément à l'écran.
-13. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+16. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 

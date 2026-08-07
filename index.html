@@ -1828,7 +1828,11 @@
                               played: 0, djTurns: 0, streak: 0, best: 0,
                               jx2: state.jokers ? 1 : 0, jsh: state.jokers ? 1 : 0 };
         if (state.teams) assignTeam(state.players[id]);
-      } else if (name) state.players[id].name = name;
+      }
+      /* On ne réécrit PLUS le pseudo ici. Chaque intention (buzz, passe, réponse…)
+         porte le nom stocké sur le téléphone du joueur : le réappliquer à chaque
+         fois annulait silencieusement le renommage fait par l'hôte, à la première
+         action du joueur. Le nom ne se fixe qu'à l'arrivée (action 'join'). */
       return state.players[id];
     }
     /* Ordre STABLE (arrivée) pour les rotations — à ne pas confondre avec le classement. */
@@ -1842,7 +1846,10 @@
     function onIntent(p) {
       if (!p || !p.id) return;
       if (p.action === 'join') {
-        ensurePlayer(p.id, p.name);
+        var jp = ensurePlayer(p.id, p.name);
+        /* Le pseudo du téléphone ne s'applique qu'à l'arrivée — et JAMAIS s'il a été
+           corrigé par l'hôte : c'est sa partie, sa correction fait autorité. */
+        if (p.name && !jp.renamedByHost) jp.name = p.name;
         beep(880, 0.08, 'sine');
         publish();
       } else if (p.action === 'buzz') {
@@ -1860,9 +1867,12 @@
            buzzer, l'app révèle le titre et clôt — au lieu de laisser tourner un extrait
            que personne ne reconnaît. */
         if (state.phase === 'buzzing' && !state.buzzer && canBuzz(p.id)) {
-          ensurePlayer(p.id, p.name);
+          var pp = ensurePlayer(p.id, p.name);
           state.tried = (state.tried || []).concat([p.id]);
-          beep(300, 0.08, 'sine');
+          /* L'animateur DOIT le voir : un simple compteur discret ne suffisait pas,
+             il ne savait ni que quelqu'un passait, ni qui. */
+          beep(300, 0.08, 'sine'); vibrate(30);
+          toast('🤷 ' + pp.name + ' passe son tour', 'info');
           if (!eligibleBuzzers().length) { noOneKnows(); return; }
           publish();
         }
@@ -2597,7 +2607,9 @@
       bind('#paClose', closePicker);
       bind('#paSave', function () {
         var v = ($('#paName') || {}).value;
-        if (v && v.trim()) p.name = v.trim().slice(0, 20);
+        // renamedByHost : marque la correction pour qu'une reconnexion du joueur
+        // ne la balaie pas en renvoyant l'ancien pseudo de son téléphone.
+        if (v && v.trim()) { p.name = v.trim().slice(0, 20); p.renamedByHost = 1; }
         publish(); closePicker(); toast('Joueur mis à jour', 'ok');
       });
       bind('#paKick', function () {
@@ -2820,7 +2832,12 @@
       } else if (s.phase === 'buzzing') {
         var hostCanBuzz = hostCanPlay();
         var hostDejaTente = (s.tried || []).indexOf(ME) >= 0;
-        var restants = eligibleBuzzers().length;
+        /* Qui a renoncé, qui reste : par NOM. Un compteur (« 1 joueur peut encore
+           répondre ») ne disait ni qu'on passait, ni qui — l'animateur ne voyait
+           donc rien passer et attendait un buzz qui ne venait jamais. */
+        var nomsPasses = (s.tried || []).map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
+        var nomsRestants = eligibleBuzzers().map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
+        var restants = nomsRestants.length;
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>'
           + (hostCanBuzz && !hostDejaTente
               ? '<div class="mt-5">' + buzzButton(false, 'BUZZ', 'Appuie vite !', 'hostBuzz') + '</div>'
@@ -2830,7 +2847,14 @@
               : (hostCanBuzz
                   ? '<p class="mt-5 text-white/45 text-sm">Tu as déjà tenté sur ce titre — au tour des autres.</p>'
                   : ''))
-          + (restants ? '<p class="text-white/35 text-xs mt-3">' + restants + ' joueur(s) peuvent encore répondre</p>' : '')
+          + (nomsPasses.length
+              ? '<div class="glass rounded-xl p-3 mt-4" style="border-color:rgba(251,191,36,.5)">'
+                + '<p class="text-neon-gold font-extrabold text-sm">🤷 ' + esc(nomsPasses.join(', ')) + ' ' + (nomsPasses.length > 1 ? 'passent' : 'passe') + ' ce titre</p>'
+                + (restants
+                    ? '<p class="text-white/55 text-xs mt-1">On attend encore : <b>' + esc(nomsRestants.join(', ')) + '</b></p>'
+                    : '')
+                + '</div>'
+              : (restants ? '<p class="text-white/35 text-xs mt-3">' + restants + ' joueur(s) peuvent encore répondre</p>' : ''))
           + '</div>';
       } else if (s.phase === 'answering') {
         if (s.buzzer.id === ME) {
@@ -3029,7 +3053,9 @@
             : ''),
                revealCard(s.reveal),
                bonusBanner(s),
-          (!s.result.correct && !s.reveal
+          /* Pas de rebond quand TOUT LE MONDE a déjà renoncé (result.none) :
+             il n'y a plus personne à qui rouvrir le buzz. */
+          (!s.result.correct && !s.reveal && !s.result.none
             ? '  <button id="reopen" class="mt-5 w-full py-3.5 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">🔔 Rebond : rouvrir le buzz aux autres</button>'
             : ''),
           '  <div class="grid grid-cols-2 gap-3 mt-3">',
@@ -3537,12 +3563,21 @@
         else center = buzzButton(true, '⏳', 'Prépare-toi…');
       } else if (s.phase === 'buzzing') {
         if (s.mode === 'fredonne' && isSource) center = '<div class="text-center animate-slidein"><div class="text-6xl mb-3 animate-pulse">🎶</div><p class="text-2xl font-extrabold text-neon-lime">FREDONNE !</p><p class="text-white/55 mt-1">Les autres essaient de deviner</p></div>';
-        else if ((s.tried || []).indexOf(ME) >= 0)
-          center = buzzButton(true, '⏳', 'Tu as déjà tenté — au tour des autres');
-        else center = buzzButton(false, 'BUZZ', 'Appuie vite !')
-          // Sortie quand on ne reconnaît pas le morceau : dès que tout le monde
-          // a renoncé, l'app révèle le titre et passe au suivant.
-          + '<button id="pass" class="mt-5 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>';
+        else {
+          /* Qui a déjà renoncé : chacun voit s'il reste quelqu'un, ou s'il est le
+             dernier à décider — sinon on attend sans savoir quoi. */
+          var passesP = (s.tried || []).map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
+          var bandeauP = passesP.length
+            ? '<p class="mt-4 text-neon-gold text-sm font-bold">🤷 ' + esc(passesP.join(', ')) + ' ' + (passesP.length > 1 ? 'passent' : 'passe') + ' ce titre</p>'
+            : '';
+          if ((s.tried || []).indexOf(ME) >= 0)
+            center = buzzButton(true, '⏳', 'Tu as déjà tenté — au tour des autres') + bandeauP;
+          else
+            center = buzzButton(false, 'BUZZ', 'Appuie vite !') + bandeauP
+              // Sortie quand on ne reconnaît pas le morceau : dès que tout le monde
+              // a renoncé, l'app révèle le titre et passe au suivant.
+              + '<button id="pass" class="mt-4 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>';
+        }
       } else if (s.phase === 'answering') {
         if (isBuzzer && answered) {
           center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">📨</div><p class="text-xl font-bold">Réponse envoyée ✓</p><p class="text-white/50 mt-1">En attente de l\'animateur…</p></div>';
@@ -3626,7 +3661,9 @@
         '<div class="flex-1 flex flex-col px-5 py-5 max-w-md mx-auto w-full">',
         '  <div class="flex items-center justify-between mb-2">',
         '    <div class="flex items-center gap-2 text-sm"><button id="gear" class="w-8 h-8 rounded-full glass flex items-center justify-center" aria-label="Réglages">⚙️</button><span class="text-white/40">Manche</span> <span class="font-extrabold text-neon-cyan">' + (s.round || '–') + '</span></div>',
-        '    <div class="text-sm font-bold">' + esc(name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
+        /* Le nom qui fait foi est celui de la partie, pas celui gardé sur le
+           téléphone : si l'hôte t'a renommé, tu dois voir TON nouveau nom. */
+        '    <div class="text-sm font-bold">' + esc(mine && mine.name ? mine.name : name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
         (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
         (s.blindRound && s.phase !== 'ended'

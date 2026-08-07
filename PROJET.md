@@ -121,6 +121,17 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
   Quand plus personne ne peut répondre, l'app **révèle le titre et clôt la manche**
   (`noOneKnows`, `result.none`). Sans ça, un extrait que personne ne reconnaissait
   tournait en boucle sans aucune sortie.
+  L'animateur voit **les noms** de ceux qui passent et de ceux qu'on attend encore,
+  plus un toast à chaque passe : un compteur discret (« 1 joueur peut encore
+  répondre ») ne lui disait ni qu'on passait, ni qui — il attendait un buzz qui ne
+  venait jamais. Pas de bouton « Rebond » quand `result.none` : plus personne à qui
+  rouvrir le buzz.
+- **Le renommage par l'hôte fait autorité** (`renamedByHost`). `ensurePlayer()` ne
+  réécrit **plus** le pseudo à chaque intention reçue : chaque buzz / passe / réponse
+  porte le nom stocké sur le téléphone du joueur, et le réappliquer annulait la
+  correction de l'hôte dès la première action. Le nom du téléphone ne s'applique
+  qu'à l'arrivée (`join`), et jamais si l'hôte a corrigé. L'en-tête du joueur affiche
+  le nom **de la partie**, pas le sien en local.
 - **Qui peut encore buzzer** = `eligibleBuzzers()` / `canBuzz(id)`, **une seule
   définition** partagée par le buzz joueur, le buzz hôte, le « je passe » et le calcul
   du rebond. La règle existait en trois exemplaires : l'hôte y échappait (il rebuzzait
@@ -204,14 +215,21 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
    contradictoire caché mais resté ACTIF est pire qu'affiché — il agit sans que
    personne puisse le voir ni le corriger. Tout masquage doit s'accompagner d'une
    remise à l'état neutre.
-17. **Une attente sans fin est lue comme une panne** — « Connexion… » sans limite ni
+17. **Une donnée renvoyée par le client écrase l'autorité du serveur.** Chaque
+   intention portait le pseudo du téléphone ; `ensurePlayer()` le réappliquait, ce
+   qui annulait silencieusement le renommage fait par l'hôte. Ce que le client
+   envoie à chaque message ne doit pas écraser une décision prise côté hôte.
+18. **Un compteur n'est pas une information.** « 1 joueur peut encore répondre » ne
+   dit ni ce qui vient de se passer, ni qui : l'animateur n'a rien vu et a attendu.
+   Un évènement qui attend une réaction doit être **nommé** et **notifié**.
+19. **Une attente sans fin est lue comme une panne** — « Connexion… » sans limite ni
    explication, c'est « le code ne marche pas ». Toute attente réseau doit relancer,
    puis dire ce qui cloche.
-18. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
+20. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
    `if (!el) return` sur le décompte : quand l'élément disparaissait, le verdict
    automatique n'était plus jamais rendu. Ne pas conditionner une règle du jeu à la
    présence d'un élément à l'écran.
-19. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+21. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 

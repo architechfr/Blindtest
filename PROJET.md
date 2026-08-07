@@ -64,6 +64,24 @@ déconnexions.
 **Tous les réglages détaillés sont repliés sous « ⚙️ Personnaliser (facultatif) »** —
 les joueurs veulent démarrer sans lire.
 
+**Chaque style masque les options qui le contredisent** (`syncSections`, sections
+`secXxx`). Afficher un réglage qui ne s'appliquera pas, c'est promettre pour rien :
+
+| Style | Ce qui disparaît (et pourquoi) |
+|---|---|
+| 🎧 Tournoi | Partie à l'aveugle (le style inverse existe déjà) |
+| 🕶️ Tous à l'aveugle | Source du son, mode de départ, roue, finale, fin de partie, temps de vote — l'app choisit, joue et corrige seule |
+| ⚔️ Duel | Idem + équipes (on est deux) |
+| 🔊 Animateur unique | « Je joue aussi » (le style **est** « l'hôte ne joue pas »), partie à l'aveugle, finale à l'aveugle |
+| 🎡 Soirée surprise | Partie à l'aveugle + mode de départ (la roue l'écrase à chaque manche) |
+
+Le bloc « rotation du DJ » et les « manches à l'aveugle en fin de tour » suivent
+`syncDjUI()` : sans rotation, il n'y a pas de fin de tour.
+Chaque style **éteint** aussi ce qu'il ne veut pas (`press('#suBlind', 0)`…) : sinon
+passer d'« aveugle » à « tournoi » laissait l'aveugle actif *en silence*, et la
+section une fois masquée, plus personne ne pouvait le voir. `finalN` est remis à 0
+sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
+
 ### Modes de jeu
 `classic` (buzz) · `turbo` (tout le monde répond, points à la vitesse 60→100) ·
 `year` (deviner l'année)
@@ -182,14 +200,18 @@ les joueurs veulent démarrer sans lire.
 15. **Un réglage qui survit à la partie et parle plus fort que le mode courant** — la
    playlist enregistrée continuait d'alimenter le tirage en source externe. Toute
    préparation automatique doit d'abord demander : *est-ce que c'est encore mon rôle ?*
-16. **Une attente sans fin est lue comme une panne** — « Connexion… » sans limite ni
+16. **Masquer une option ne suffit pas : il faut aussi l'éteindre.** Un réglage
+   contradictoire caché mais resté ACTIF est pire qu'affiché — il agit sans que
+   personne puisse le voir ni le corriger. Tout masquage doit s'accompagner d'une
+   remise à l'état neutre.
+17. **Une attente sans fin est lue comme une panne** — « Connexion… » sans limite ni
    explication, c'est « le code ne marche pas ». Toute attente réseau doit relancer,
    puis dire ce qui cloche.
-17. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
+18. **Une sortie anticipée qui dépend de l'affichage** — `voteTick` faisait
    `if (!el) return` sur le décompte : quand l'élément disparaissait, le verdict
    automatique n'était plus jamais rendu. Ne pas conditionner une règle du jeu à la
    présence d'un élément à l'écran.
-18. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
+19. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
 

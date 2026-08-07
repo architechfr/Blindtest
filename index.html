@@ -1245,7 +1245,11 @@
       '    <summary class="glass rounded-2xl px-4 py-3 text-sm font-bold text-white/70 cursor-pointer">⚙️ Personnaliser (facultatif)</summary>',
       '    <div class="mt-3">',
 
+      /* Chaque groupe d'options est enveloppé dans une section identifiée (secXxx) :
+         le style choisi masque celles qui le contredisent — voir syncSections().
+         Un réglage incohérent affiché est une promesse non tenue. */
       // Mode « tout le monde à l'aveugle » : l'app fait le DJ, personne ne connaît la réponse.
+      '  <div id="secBlind">',
       '  <button type="button" id="suBlind" class="w-full p-3 rounded-xl text-left bg-black/30 text-white/70 mb-2">',
       '    <div class="font-extrabold">🕶️ Partie à l\'aveugle — <span id="suBlindState">OFF</span></div>',
       '    <div class="text-xs opacity-80">Aucun DJ : l\'app choisit les morceaux, les joue et corrige toute seule. <b>Tout le monde joue à égalité</b>, sur un nombre de manches fixé. Le plus équitable.</div></button>',
@@ -1262,7 +1266,9 @@
       '    <p class="text-white/40 text-xs mt-2">Au buzz : le premier qui appuie répond, l\'app dit tout de suite si c\'est bon. Parfait à deux.</p>',
       '    <div class="flex items-center gap-2 mt-3 text-sm text-white/60"><span>🏁 Nombre de manches :</span><input id="suBlindRounds" type="number" min="3" max="50" value="10" class="w-16 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
       '  </div>',
+      '  </div>',
 
+      '  <div id="secAudio">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔈 D\'où sort la musique ?</p>',
       '  <div class="grid grid-cols-1 gap-2 mb-2">',
       '    <button type="button" class="suAudio p-3 rounded-xl text-left bg-neon-violet text-white" data-audio="device">',
@@ -1273,7 +1279,9 @@
       '      <div class="text-xs opacity-80">Enceinte, chaîne hi-fi, autre téléphone, vinyle… L\'app ne gère que le jeu. Aucun service musical requis.</div></button>',
       '  </div>',
       '  <p class="text-white/40 text-xs mb-5">Tu pourras changer en cours de partie.</p>',
+      '  </div>',
 
+      '  <div id="secMode">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Mode de jeu de départ</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" class="suMode py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-mode="classic">🔊 Classique</button>',
@@ -1282,7 +1290,9 @@
       '  </div>',
       '  <p class="text-white/40 text-xs mb-2">⚡ <b>Turbo</b> : tout le monde répond en même temps, les points (jusqu\'à 100) dépendent de ta rapidité — personne ne reste sur le banc.</p>',
       '  <p class="text-white/40 text-xs mb-3">Tu pourras changer de mode à tout moment pendant la partie (le classement est conservé).</p>',
+      '  </div>',
 
+      '  <div id="secWheel">',
       '  <button type="button" id="suWheel" class="w-full py-3.5 rounded-xl text-sm font-extrabold bg-black/30 text-white/60 mb-2">🎡 Roue des défis : OFF</button>',
       '  <p class="text-white/40 text-xs mb-1">Avant chaque titre, l\'app <b>tire une règle au sort</b> et l\'annonce à tout le monde. Exemples :</p>',
       '  <ul class="text-white/40 text-xs mb-5 ml-4 list-disc space-y-0.5">',
@@ -1292,16 +1302,23 @@
       '    <li><b>Mort subite</b> — points doublés, mais une erreur coûte double aussi</li>',
       '  </ul>',
       '  <p class="text-white/35 text-xs mb-5">Ça remplace le mode de jeu choisi au-dessus, manche après manche.</p>',
+      '  </div>',
 
+      '  <div id="secBonus">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🔥 Bonus</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" id="suCombos" class="py-3 rounded-xl text-sm font-bold bg-neon-gold text-black">🔥 Combos</button>',
       '    <button type="button" id="suJokers" class="py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black">🃏 Jokers</button>',
       '  </div>',
       '  <p class="text-white/40 text-xs mb-5"><b>Combos</b> : bonnes réponses d\'affilée = bonus croissant (+1, +2, +3). <b>Jokers</b> : chaque joueur reçoit 1 × « ×2 » (double ses points) et 1 × « 🛡️ bouclier » (annule un malus), à jouer quand il veut.</p>',
+      '  </div>',
 
+      '  <div id="secFinal">',
       '  <button type="button" id="suBlindFinal" class="w-full py-3 rounded-xl text-sm font-bold bg-black/30 text-white/60 mb-2">🕶️ Finale à l\'aveugle : OFF</button>',
       '  <p class="text-white/40 text-xs mb-5">À la fin de chaque série, une manche <b>sans DJ</b> : l\'app choisit le morceau, le joue et corrige. Le DJ sortant joue enfin lui aussi — tout le monde à égalité.</p>',
+      '  </div>',
+
+      '  <div id="secGoal">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🏁 Fin de partie</p>',
       '  <div class="grid grid-cols-3 gap-2 mb-2">',
       '    <button type="button" class="suGoal py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-goal="none">Libre</button>',
@@ -1310,6 +1327,7 @@
       '  </div>',
       '  <div id="goalBox" class="flex items-center gap-2 mb-5 text-sm text-white/60" style="display:none"><span id="goalLbl">Objectif :</span><input id="goalVal" type="number" min="1" max="999" value="50" class="w-20 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
       '  <p id="goalHint" class="text-white/40 text-xs mb-5">Partie <b>libre</b> : tu décides quand terminer (bouton « Terminer »).</p>',
+      '  </div>',
 
       '  <p id="suDjTitle" class="block text-sm text-white/60 mb-2 font-bold uppercase">🎧 Rotation du DJ</p>',
       '  <div id="suDjBox" class="grid grid-cols-3 gap-2 mb-2">',
@@ -1331,6 +1349,7 @@
          }).join('') + '</div>',
       '  <p class="text-white/40 text-xs mt-2">Quand tout le monde est passé DJ, on ajoute ces manches où <b>personne ne connaît la réponse</b>. Puis la partie se termine.</p></div>',
 
+      '  <div id="secAns">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Que doit-on trouver ?</p>',
       '  <div class="grid grid-cols-2 gap-2 mb-2">',
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-neon-violet text-white" data-ans="both">🎵 Titre + Artiste</button>',
@@ -1339,11 +1358,14 @@
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="artist">🎤 Artiste seul</button>',
       '  </div>',
       '  <p class="text-white/40 text-xs mb-5"><b>Titre + Artiste</b> : les deux sont demandés (2 cases, moitié des points si une seule bonne). <b>Titre OU Artiste</b> : l\'un des deux suffit pour marquer.</p>',
+      '  </div>',
 
       '  <div id="voteSecsBox" class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>⏱️ Temps de vote des autres joueurs :</span><input id="voteSecs" type="number" min="0" max="60" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
 
+      '  <div id="secTeams">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Équipes</p>',
       '  <div class="grid grid-cols-4 gap-2 mb-6">' + [0, 2, 3, 4].map(function (n) { return '<button type="button" class="suTeam py-3 rounded-xl text-sm font-bold ' + (n === 0 ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-teams="' + n + '">' + (n === 0 ? 'Off' : n) + '</button>'; }).join('') + '</div>',
+      '  </div>',
 
       // Barème du mode Turbo : rien à régler, le calcul est automatique.
       '  <div id="turboBox" class="glass rounded-2xl p-4 mb-8" style="display:none">',
@@ -1546,15 +1568,20 @@
         });
         (best || tous[0]).click();
       }
+      /* Chaque style ÉTEINT aussi ce qu'il ne veut pas : sans le press('#suBlind', 0),
+         passer d'« aveugle » à « tournoi » laissait l'aveugle activé en silence —
+         et une fois la section masquée, plus personne ne pouvait le voir. */
       var STYLES = {
-        tournoi:  function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(1); },
+        tournoi:  function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(1); },
         aveugle:  function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); syncDjUI(0); },
         duel:     function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
-        anim:     function () { press('#suHostPlays', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
-        surprise: function () { press('#suHostPlays', 1); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); syncDjUI(1); }
+        anim:     function () { press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
+        surprise: function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); syncDjUI(1); }
       };
       /* Le bloc « rotation » n'a de sens que dans les styles qui font tourner le DJ.
-         Ailleurs on le masque ; en tournoi on retire « moi seul » (contradictoire). */
+         Ailleurs on le masque ; en tournoi on retire « moi seul » (contradictoire).
+         Les « manches à l'aveugle en fin de tour » suivent la rotation : sans elle,
+         il n'y a pas de « fin de tour ». */
       function syncDjUI(avecRotation) {
         var box = document.getElementById('suDjBox'), tit = document.getElementById('suDjTitle');
         var off = document.querySelector('.suDj[data-dj="0"]');
@@ -1564,13 +1591,47 @@
         if (box) box.className = 'grid grid-cols-3 gap-2 mb-2';
         var note = document.getElementById('suDjNote');
         if (note) note.style.display = avecRotation ? '' : 'none';
+        var fin = document.getElementById('suFinalBox');
+        if (fin) fin.style.display = avecRotation ? '' : 'none';
+      }
+      /* Un style masque les options qui le contredisent — les afficher, c'était
+         promettre un réglage qui ne s'applique pas :
+         · Tournoi / Surprise : « Partie à l'aveugle » (le style inverse existe) ;
+           en Surprise, le « mode de départ » aussi (la roue l'écrase à chaque manche).
+         · Tous à l'aveugle / Duel : l'app choisit, joue et corrige → la source du
+           son, le mode de départ, la roue, la finale, la fin de partie (le nombre
+           de manches est déjà dans le bloc aveugle) et le temps de vote (personne
+           ne vote, l'app corrige) n'ont plus de prise. Duel : pas d'équipes à deux.
+         · Animateur unique : « Je joue aussi » (le style EST « l'hôte ne joue
+           pas »), la partie à l'aveugle (contradiction : personne n'anime) et la
+           finale à l'aveugle (elle suppose une rotation de DJ). */
+      var CACHE_PAR_STYLE = {
+        tournoi:  ['secBlind'],
+        surprise: ['secBlind', 'secMode'],
+        // suBlind (l'interrupteur seul) : dans ces deux styles, l'aveugle EST le
+        // style — on garde la config (playlists, manches) mais pas le bouton qui
+        // permettrait de l'éteindre en le contredisant.
+        aveugle:  ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox'],
+        duel:     ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox', 'secTeams'],
+        anim:     ['suHostPlays', 'secBlind', 'secFinal']
+      };
+      var TOUTES_SECTIONS = ['suHostPlays', 'secBlind', 'suBlind', 'secAudio', 'secMode', 'secWheel',
+                             'secBonus', 'secFinal', 'secGoal', 'secAns', 'voteSecsBox', 'secTeams'];
+      function syncSections(style) {
+        var cache = CACHE_PAR_STYLE[style] || [];
+        TOUTES_SECTIONS.forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el) el.style.display = cache.indexOf(id) >= 0 ? 'none' : '';
+        });
       }
       function applyStyle(b, silencieux) {
         Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (x) {
           x.className = x.className.replace('bg-gradient-to-r from-neon-pink to-neon-violet text-white', 'bg-black/30 text-white/70');
         });
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-gradient-to-r from-neon-pink to-neon-violet text-white');
-        var f = STYLES[b.getAttribute('data-style')]; if (f) f();
+        var style = b.getAttribute('data-style');
+        var f = STYLES[style]; if (f) f();
+        syncSections(style);
         if (!silencieux) toast('Réglages appliqués ✓', 'ok');
       }
       Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (b) {
@@ -1604,7 +1665,10 @@
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.blindFinal = setupBlindFinal;
         st.hostPlays = setupHostPlays;
-        st.finalN = setupFinalN;   // manches à l'aveugle ajoutées en fin de tour
+        /* Manches à l'aveugle « en fin de tour » : sans rotation de DJ, il n'y a pas
+           de fin de tour. On enregistre 0 plutôt que de laisser un réglage qui
+           contredit le style choisi — même s'il est inerte aujourd'hui. */
+        st.finalN = st.djRotate ? setupFinalN : 0;
         st.goal = setupGoal;
         st.goalVal = Math.max(1, val('#goalVal', setupGoal === 'score' ? 50 : 20));
         st.fredEvery = Math.max(1, val('#fredEvery', 10));

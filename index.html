@@ -782,10 +782,18 @@
           : '<div class="text-xs text-neon-lime font-bold">Morceau prêt · caché</div><div class="font-bold text-sm text-white/30 tracking-widest">••••••••</div>')
       + '<div class="h-1.5 mt-1.5 rounded-full bg-white/10 overflow-hidden"><div id="plyBar" class="h-full rounded-full" style="width:0%;background:linear-gradient(90deg,#22d3ee,#ff2e9a)"></div></div>'
       + '</div>'
-      + '<button id="plyToggle" class="w-14 h-14 rounded-full shrink-0 text-2xl font-extrabold flex items-center justify-center ' + (playing ? 'bg-white/15' : 'bg-gradient-to-br from-neon-lime to-neon-cyan text-black') + '">' + (playing ? '⏸' : '▶') + '</button>'
+      /* Verrou d'écoute : à l'aveugle, l'hôte joue aussi. Le titre était masqué, mais
+         rien ne l'empêchait d'ÉCOUTER l'extrait avant de lancer la manche — or le
+         morceau suivant est préchargé entre les manches. Il connaissait donc la
+         réponse avant tout le monde. Masquer le titre ne suffit pas : il faut couper
+         l'accès au son tant que la manche n'est pas ouverte pour tous. */
+      + (opts.verrou
+          ? '<div class="w-14 h-14 rounded-full shrink-0 text-2xl flex items-center justify-center bg-white/10 text-white/40">🔒</div>'
+          : '<button id="plyToggle" class="w-14 h-14 rounded-full shrink-0 text-2xl font-extrabold flex items-center justify-center ' + (playing ? 'bg-white/15' : 'bg-gradient-to-br from-neon-lime to-neon-cyan text-black') + '">' + (playing ? '⏸' : '▶') + '</button>')
       + '</div>'
+      + (opts.verrou ? '<p class="text-white/45 text-xs mt-2">🔒 Écoute verrouillée — la musique démarrera en même temps pour tout le monde, au lancement de la manche.</p>' : '')
       + '<div class="flex items-center gap-2 mt-2">'
-      + '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold" title="Reprendre au début">↺</button>'
+      + (opts.verrou ? '' : '<button id="plyRestart" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold" title="Reprendre au début">↺</button>')
       + '<span id="plyTime" class="text-white/40 text-xs tabular-nums">0:00</span>'
       + '<input id="plyVol" type="range" min="0" max="1" step="0.05" value="' + (dzAudio ? dzAudio.volume : 1) + '" class="flex-1 min-w-0" />'
       + (opts.blind ? '' : '<button id="plyPeek" class="px-2.5 py-1.5 rounded-lg glass text-xs font-bold shrink-0">' + (trackHidden ? '👁' : '🙈') + '</button>')
@@ -988,6 +996,46 @@
     }
     if (_conf.length) _confRAF = requestAnimationFrame(_confStep);
     else { _confCtx.clearRect(0, 0, W, H); _confRAF = 0; }
+  }
+
+  /* ---------------------------------------------------------------
+     EFFETS DU CONTRE — le seul joker qui vise quelqu'un d'autre.
+     Trois règles d'arbitrage, que tout nouvel effet doit respecter :
+       1. AUCUN n'élimine définitivement — on ralentit, on corse, on
+          fait patienter, mais le visé reste dans la manche (sauf
+          « barré sec », assumé comme la version brutale).
+       2. AUCUN ne demande d'arbitrage humain : la règle se résout
+          toute seule, sinon la soirée s'arrête pour discuter.
+       3. TOUS fonctionnent avec une enceinte unique. Un effet qui
+          couperait le son du visé couperait celui de toute la table :
+          c'est pour ça qu'il n'y a pas de « son coupé » ici.
+     --------------------------------------------------------------- */
+  var CONTRE_DELAI = 5000;   // « ralenti » : retard imposé au buzz du meneur
+  var CONTRE_EFFETS = {
+    ice:    { icon: '🧊', nom: 'Écran gelé', verbe: 'a gelé',
+              court: 'écran pris par le givre — il doit le frotter pour revenir',
+              aide: 'Son écran se couvre de givre : il doit le <b>frotter au doigt</b> pour revenir. Il perd de précieuses secondes mais reste dans la manche.' },
+    slow:   { icon: '🐢', nom: 'Ralenti', verbe: 'a ralenti',
+              court: 'son buzz s\'ouvre 5 secondes après les autres',
+              aide: 'Son buzz s\'ouvre <b>5 secondes après</b> celui des autres. Il joue quand même : si personne ne trouve avant, il marque.' },
+    exig:   { icon: '🎯', nom: 'Exigence', verbe: 'a corsé le titre de',
+              court: 'il doit donner le titre ET l\'artiste',
+              aide: 'Il doit donner <b>le titre ET l\'artiste</b> quand les autres n\'ont qu\'une des deux à trouver. Il peut encore prendre la moitié des points.' },
+    dbl:    { icon: '💸', nom: 'Quitte ou double', verbe: 'a doublé la mise contre',
+              court: 'ses points comptent double, en bien comme en mal',
+              aide: 'Sur ce titre ses points comptent <b>double</b> : s\'il trouve il s\'envole, s\'il se trompe il plonge. Un pari sur son assurance.' },
+    second: { icon: '🥈', nom: 'Second couteau', verbe: 'a fait passer devant',
+              court: 'il ne peut buzzer qu\'après une première tentative',
+              aide: 'Il ne peut buzzer qu\'<b>après</b> que quelqu\'un d\'autre a tenté sa chance. Il garde le rebond, pas la primeur.' },
+    block:  { icon: '🚫', nom: 'Barré sec', verbe: 'a barré',
+              court: 'il ne joue pas ce titre',
+              aide: 'Il ne joue pas ce titre du tout. Le plus brutal — à réserver aux parties courtes.' }
+  };
+  var CONTRE_ORDRE = ['ice', 'slow', 'exig', 'dbl', 'second', 'block'];
+  /* Les parties enregistrées avant les nouveaux effets n'ont que `ice: 0|1`. */
+  function contreInfo(c) {
+    if (!c) return CONTRE_EFFETS.ice;
+    return CONTRE_EFFETS[c.eff] || (c.ice ? CONTRE_EFFETS.ice : CONTRE_EFFETS.block);
   }
 
   /* ---------------------------------------------------------------
@@ -1429,17 +1477,27 @@
       '  </div>',
       '  <p class="text-white/40 text-xs mb-3"><b>Combos</b> : bonnes réponses d\'affilée = bonus croissant (+1, +2, +3). <b>Jokers</b> : chacun reçoit 1 × « 🃏 ×2 » (double ses points), 1 × « 🛡️ bouclier » (annule un malus) et 1 × « contre » (vise <b>le meneur</b>). On en regagne en enchaînant 3 bonnes réponses, ou en étant distancé.</p>',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Effet du contre</p>',
-      '  <div class="grid grid-cols-2 gap-2 mb-2">',
-      '    <button type="button" class="suContre py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-contre="ice">🧊 Écran gelé</button>',
-      '    <button type="button" class="suContre py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-contre="block">🚫 Barré sec</button>',
-      '  </div>',
-      '  <p class="text-white/40 text-xs mb-5"><b>🧊 Écran gelé</b> : le meneur voit son écran pris par le givre et doit le <b>frotter au doigt</b> pour revenir — il perd de précieuses secondes mais reste dans la manche. <b>🚫 Barré sec</b> : il ne joue pas ce titre du tout.</p>',
+      '  <div class="grid grid-cols-2 gap-2 mb-2">'
+        + CONTRE_ORDRE.map(function (k) {
+            var e = CONTRE_EFFETS[k];
+            return '<button type="button" class="suContre py-3 rounded-xl text-sm font-bold ' + (k === 'ice' ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-contre="' + k + '">' + e.icon + ' ' + esc(e.nom) + '</button>';
+          }).join('')
+        // Le meilleur réglage est souvent celui qu'on n'a pas à choisir : au hasard,
+        // l'effet change à chaque contre et personne ne peut s'y préparer.
+        + '<button type="button" class="suContre col-span-2 py-3 rounded-xl text-sm font-extrabold bg-black/30 text-white/70" data-contre="rand">🎲 Au hasard — surprise à chaque fois</button>'
+        + '</div>',
+      '  <ul class="text-white/40 text-xs mb-5 space-y-1">'
+        + CONTRE_ORDRE.map(function (k) {
+            var e = CONTRE_EFFETS[k];
+            return '<li><b>' + e.icon + ' ' + esc(e.nom) + '</b> — ' + e.aide + '</li>';
+          }).join('') + '</ul>',
       '  </div>',
 
-      '  <div id="secFinal">',
-      '  <button type="button" id="suBlindFinal" class="w-full py-3 rounded-xl text-sm font-bold bg-black/30 text-white/60 mb-2">🕶️ Finale à l\'aveugle : OFF</button>',
-      '  <p class="text-white/40 text-xs mb-5">À la fin de chaque série, une manche <b>sans DJ</b> : l\'app choisit le morceau, le joue et corrige. Le DJ sortant joue enfin lui aussi — tout le monde à égalité.</p>',
-      '  </div>',
+      /* L'interrupteur « Finale à l'aveugle : ON/OFF » a été retiré : le code ne l'a
+         jamais lu. `finalN` (le nombre de manches, plus bas) est toujours défini, et
+         `nFinal` le préfère systématiquement — l'interrupteur ne pouvait donc rien
+         changer. Deux réglages pour la même chose, dont un inerte : on garde celui
+         qui dit vraiment quelque chose (« Aucune / 3 / 5 / 10 »). */
 
       '  <div id="secGoal">',
       '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🏁 Fin de partie</p>',
@@ -1510,10 +1568,14 @@
       '    <div class="grid grid-cols-2 gap-3 text-center">',
       '      <div><div class="text-xs text-neon-lime mb-1">✓ Bonne réponse</div><input id="pBuzz" type="number" value="5" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '      <div><div class="text-xs text-rose-400 mb-1">✗ Mauvaise réponse</div><input id="pWrong" type="number" value="-2" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '    </div>',
+      // Les points de vote n'existent que s'il y a un vote : à l'aveugle, l'app
+      // corrige seule et ces deux réglages n'ont jamais aucun effet.
+      '    <div id="votePoints" class="grid grid-cols-2 gap-3 text-center mt-3">',
       '      <div><div class="text-xs text-neon-lime mb-1">👍 Bon vote</div><input id="pVote" type="number" value="2" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
       '      <div><div class="text-xs text-rose-400 mb-1">👎 Mauvais vote</div><input id="pVoteWrong" type="number" value="-1" class="w-full bg-black/40 rounded-lg py-2 text-center text-xl font-bold outline-none" /></div>',
+      '      <p class="col-span-2 text-white/35 text-xs">Le vote récompense ceux qui jugent juste : bien voté = points, mal voté = malus.</p>',
       '    </div>',
-      '    <p class="text-white/35 text-xs mt-2 text-center">Le vote récompense ceux qui jugent juste : bien voté = points, mal voté = malus.</p>',
       '  </div>',
 
       '    </div>',
@@ -1555,16 +1617,9 @@
             x.className = x.className.replace('bg-neon-violet text-white', 'bg-black/30 text-white/70');
           });
           b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
+          syncPointsUI();   // buzz ou turbo : ce n'est pas le même barème
         };
       });
-    })();
-    (function () {
-      var fb = document.getElementById('suBlindFinal');
-      if (fb) fb.onclick = function () {
-        setupBlindFinal = setupBlindFinal ? 0 : 1;
-        fb.className = 'w-full py-3 rounded-xl text-sm font-bold mb-2 ' + (setupBlindFinal ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/60');
-        fb.textContent = '🕶️ Finale à l\'aveugle : ' + (setupBlindFinal ? 'ON' : 'OFF');
-      };
     })();
     (function () {
       var bb = document.getElementById('suBlind');
@@ -1580,6 +1635,7 @@
         var st = document.getElementById('suBlindState'); if (st) st.textContent = setupBlind ? 'ON' : 'OFF';
         var box = document.getElementById('suBlindBox'); if (box) box.style.display = setupBlind ? '' : 'none';
         refreshPl();
+        syncPointsUI();   // l'aveugle change le barème qui s'appliquera
       };
       Array.prototype.forEach.call(document.querySelectorAll('.suBlindPl'), function (b) {
         b.onclick = function () {
@@ -1647,13 +1703,22 @@
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
       };
     });
-    // Le mode Turbo a son propre barème (vitesse) : on montre le bon bloc de points.
+    /* Le barème affiché doit être celui qui s'appliquera VRAIMENT.
+       Deux mensonges corrigés ici :
+       · à l'aveugle, c'est « Comment on répond » (buzz/turbo) qui fixe le mode, pas
+         « Mode de jeu de départ ». « Tous à l'aveugle » joue en Turbo mais affichait
+         le barème au buzz (+5 / −2), qui n'y sert à rien ;
+       · personne ne vote à l'aveugle — l'app corrige. Les points de vote et le temps
+         de vote y étaient réglables sans jamais rien produire. */
     function syncPointsUI() {
-      var turbo = setupMode === 'turbo';
-      var pb = document.getElementById('pointsBox'), tb = document.getElementById('turboBox'), vb = document.getElementById('voteSecsBox');
+      var turbo = setupBlind ? (setupBlindPlay === 'turbo') : (setupMode === 'turbo');
+      var avecVote = !setupBlind && !turbo;
+      var pb = document.getElementById('pointsBox'), tb = document.getElementById('turboBox'),
+          vb = document.getElementById('voteSecsBox'), vp = document.getElementById('votePoints');
       if (pb) pb.style.display = turbo ? 'none' : '';
       if (tb) tb.style.display = turbo ? '' : 'none';
-      if (vb) vb.style.display = turbo ? 'none' : '';   // pas de vote en Turbo
+      if (vb) vb.style.display = avecVote ? '' : 'none';
+      if (vp) vp.style.display = avecVote ? '' : 'none';
     }
     Array.prototype.forEach.call(document.querySelectorAll('.suMode'), function (b) {
       b.onclick = function () {
@@ -1706,14 +1771,14 @@
          passer d'« aveugle » à « tournoi » laissait l'aveugle activé en silence —
          et une fois la section masquée, plus personne ne pouvait le voir. */
       var STYLES = {
-        tournoi:  function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '3'); press('#suBlindFinal', 1); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(1); },
-        aveugle:  function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); syncDjUI(0); },
-        duel:     function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
-        anim:     function () { press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
-        surprise: function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); syncDjUI(1); },
+        tournoi:  function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '3'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(1); },
+        aveugle:  function () { press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); syncDjUI(0); },
+        duel:     function () { press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
+        anim:     function () { press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
+        surprise: function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suWheel', 1); syncDjUI(1); },
         /* Dingo : c'est l'app qui choisit, joue ET corrige — indispensable, sinon
            celui qui tient le morceau pourrait s'arranger avec son propre handicap. */
-        dingo:    function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); }
+        dingo:    function () { press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); }
       };
       /* Le bloc « rotation » n'a de sens que dans les styles qui font tourner le DJ.
          Ailleurs on le masque ; en tournoi on retire « moi seul » (contradictoire).
@@ -1748,14 +1813,14 @@
         // suBlind (l'interrupteur seul) : dans ces deux styles, l'aveugle EST le
         // style — on garde la config (playlists, manches) mais pas le bouton qui
         // permettrait de l'éteindre en le contredisant.
-        aveugle:  ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox'],
-        duel:     ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox', 'secTeams'],
-        anim:     ['suHostPlays', 'secBlind', 'secFinal'],
+        aveugle:  ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secGoal', 'voteSecsBox'],
+        duel:     ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secGoal', 'voteSecsBox', 'secTeams'],
+        anim:     ['suHostPlays', 'secBlind'],
         // Dingo : comme l'aveugle, plus les équipes (le handicap est individuel).
-        dingo:    ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox', 'secTeams']
+        dingo:    ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secGoal', 'voteSecsBox', 'secTeams']
       };
       var TOUTES_SECTIONS = ['suHostPlays', 'secBlind', 'suBlind', 'secAudio', 'secMode', 'secWheel',
-                             'secBonus', 'secFinal', 'secGoal', 'secAns', 'voteSecsBox', 'secTeams'];
+                             'secBonus', 'secGoal', 'secAns', 'voteSecsBox', 'secTeams'];
       function syncSections(style) {
         var cache = CACHE_PAR_STYLE[style] || [];
         TOUTES_SECTIONS.forEach(function (id) {
@@ -1772,6 +1837,9 @@
         setupStyle = style;
         var f = STYLES[style]; if (f) f();
         syncSections(style);
+        // APRÈS syncSections : celui-ci réaffiche tout ce qu'il ne masque pas et
+        // annulerait sinon le masquage des réglages de vote inertes.
+        syncPointsUI();
         if (!silencieux) toast('Réglages appliqués ✓', 'ok');
       }
       Array.prototype.forEach.call(document.querySelectorAll('.suStyle'), function (b) {
@@ -1805,6 +1873,9 @@
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.contreMode = setupContre;   // 'ice' (écran gelé) ou 'block' (barré sec)
         st.dingo = (setupStyle === 'dingo') ? 1 : 0;
+        /* Toujours 0 : l'interrupteur qui le pilotait a été retiré (il était inerte).
+           Le champ reste pour les parties enregistrées avant `finalN`, où il sert
+           encore de valeur de repli dans launchRound. */
         st.blindFinal = setupBlindFinal;
         st.hostPlays = setupHostPlays;
         /* Manches à l'aveugle « en fin de tour » : sans rotation de DJ, il n'y a pas
@@ -2244,8 +2315,10 @@
         beep(880, 0.08, 'sine');
         publish();
       } else if (p.action === 'buzz') {
-        // Premier buzz reçu pendant la phase "buzzing" gagne.
-        if (state.phase === 'buzzing' && !state.buzzer && canBuzz(p.id)) {
+        // Premier buzz reçu pendant la phase "buzzing" gagne — sauf si un contre le
+        // retient encore (ralenti, second couteau). Ceinture ET bretelles : l'écran
+        // désactive déjà le bouton, mais la règle ne doit pas dépendre de l'affichage.
+        if (state.phase === 'buzzing' && !state.buzzer && canBuzz(p.id) && !contreEmpeche(p.id)) {
           var pl = ensurePlayer(p.id, p.name);
           state.buzzer = { id: pl.id, name: pl.name };
           state.phase = 'answering';
@@ -2272,12 +2345,15 @@
           state.answer = String(p.text || '').slice(0, 120);
           // Chrono : temps entre l'ouverture du buzz et la réponse envoyée (info pour le DJ).
           if (state.buzzOpenAt) state.buzzMs = Date.now() - state.buzzOpenAt;
-          state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, state.answerMode) : null;
+          state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, modeReponse(state.buzzer.id)) : null;
           beep(520, 0.12, 'sine');
-          // À l'aveugle, personne ne peut juger (personne ne connaît le titre) :
-          // l'app tranche seule, tout de suite. Idéal à deux joueurs.
+          /* À l'aveugle, personne ne peut juger (personne ne connaît le titre) :
+             l'app tranche seule, tout de suite. Idéal à deux joueurs.
+             « À moitié » compte comme une RÉUSSITE partielle (moitié des points) :
+             passé en `correct = false`, il appliquait le malus complet — l'écran
+             annonçait « Raté ! −2 (à moitié) », ce qui ne veut rien dire. */
           if (appCorrige()) {
-            if (roundTrack) { validate(state.suggest === 'ok', state.suggest === 'half'); return; }
+            if (roundTrack) { validate(state.suggest === 'ok' || state.suggest === 'half', state.suggest === 'half'); return; }
             manchePerdue(); return;   // sans référence, on n'envoie personne juger à l'aveugle
           }
           state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
@@ -2312,16 +2388,22 @@
         if (!meneur || meneur === p.id) return;                     // on ne se contre pas soi-même
         if (!canBuzz(meneur)) return;                               // déjà hors course
         cp.jct--;
-        /* Deux effets au choix (réglage « Effet du contre ») :
-             ice   → écran gelé, il doit le frotter pour revenir (il perd du temps)
-             block → barré sec, il ne joue pas ce titre
-           Le gel est plus vivant : il laisse une chance au lieu d'éliminer. */
-        var glace = (state.contreMode || 'ice') === 'ice';
-        if (!glace) state.tried = (state.tried || []).concat([meneur]);
+        /* L'effet vient du réglage « Effet du contre ». « 🎲 Au hasard » tire à
+           chaque fois : personne ne peut s'y préparer, et c'est le réglage qui
+           demande le moins de décisions à celui qui monte la partie. */
+        var eff = state.contreMode || 'ice';
+        if (eff === 'rand' || !CONTRE_EFFETS[eff]) {
+          eff = CONTRE_ORDRE[(Math.random() * CONTRE_ORDRE.length) | 0];
+        }
+        // Seul « barré sec » sort le meneur de la manche ; les autres le gênent.
+        if (eff === 'block') state.tried = (state.tried || []).concat([meneur]);
         state.contre = { by: cp.name, target: (state.players[meneur] || {}).name || '',
-                         targetId: meneur, ice: glace ? 1 : 0 };
+                         targetId: meneur, eff: eff, ice: eff === 'ice' ? 1 : 0,
+                         // « ralenti » : instant à partir duquel son buzz s'ouvre.
+                         openAt: eff === 'slow' ? Date.now() + CONTRE_DELAI : 0 };
+        var inf = CONTRE_EFFETS[eff];
         beep(160, 0.3, 'sawtooth'); vibrate([0, 80, 40, 80]);
-        toast((glace ? '🧊 ' : '🚫 ') + state.contre.by + ' gèle ' + state.contre.target + ' !', 'info');
+        toast(inf.icon + ' ' + state.contre.by + ' ' + inf.verbe + ' ' + state.contre.target + ' !', 'info');
         if (!eligibleBuzzers().length) { noOneKnows(); return; }
         publish();
       } else if (p.action === 'race') {
@@ -2662,6 +2744,25 @@
       });
     }
     function canBuzz(id) { return eligibleBuzzers().indexOf(id) >= 0; }
+    /* Gêne TEMPORAIRE d'un contre, au moment précis du buzz. Volontairement séparé
+       de canBuzz/eligibleBuzzers : le visé reste « quelqu'un qui peut encore
+       répondre » — l'en retirer aurait clos la manche toute seule en le croyant
+       hors jeu, alors qu'il va pouvoir jouer dans quelques secondes.
+       Renvoie la clé de l'effet qui bloque, ou null. */
+    function contreEmpeche(id) {
+      var c = state.contre;
+      if (!c || c.targetId !== id) return null;
+      if (c.eff === 'slow' && Date.now() < (c.openAt || 0)) return 'slow';
+      if (c.eff === 'second' && !(state.tried || []).length) return 'second';
+      return null;
+    }
+    /* Ce que CE joueur doit trouver sur ce titre : l'« exigence » lui demande les
+       deux quand les autres n'ont qu'une des deux à donner. */
+    function modeReponse(id) {
+      var c = state.contre;
+      if (c && c.eff === 'exig' && c.targetId === id) return 'both';
+      return state.answerMode;
+    }
     /* Le meneur au moment présent — cible du 🚫 Contre. En cas d'égalité en tête,
        personne ne mène : on ne barre pas quelqu'un au hasard. */
     function leaderId() {
@@ -2697,7 +2798,7 @@
       var t = tallyVotes();
       if (t.up > t.down) { validate(true, false); return; }
       if (t.down > t.up) { validate(false, false); return; }
-      if (state.suggest) { validate(state.suggest === 'ok', state.suggest === 'half'); return; }
+      if (state.suggest) { validate(state.suggest === 'ok' || state.suggest === 'half', state.suggest === 'half'); return; }
       validate(false, false);
     }
     /* Le vote des autres est-il complet ? (tout le monde sauf celui qui a répondu) */
@@ -2713,7 +2814,7 @@
     function hostBuzz() {
       // canBuzz : l'hôte a longtemps échappé au filtre « déjà tenté » qui, lui,
       // n'existait que côté joueur — il pouvait donc rebuzzer juste après avoir raté.
-      if (state.phase === 'buzzing' && !state.buzzer && hostCanPlay() && canBuzz(ME)) {
+      if (state.phase === 'buzzing' && !state.buzzer && hostCanPlay() && canBuzz(ME) && !contreEmpeche(ME)) {
         var pl = ensurePlayer(ME, state.hostName);
         state.buzzer = { id: pl.id, name: pl.name };
         state.phase = 'answering';
@@ -2746,9 +2847,9 @@
         /* Exactement le même traitement que pour un joueur — c'était le trou :
            l'hôte n'avait ni suggestion ni validation automatique, il arrivait donc
            toujours sur l'écran de verdict… qu'il pouvait trancher lui-même. */
-        state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, state.answerMode) : null;
+        state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, modeReponse(state.buzzer.id)) : null;
         if (appCorrige()) {
-          if (roundTrack) { validate(state.suggest === 'ok', state.suggest === 'half'); return; }
+          if (roundTrack) { validate(state.suggest === 'ok' || state.suggest === 'half', state.suggest === 'half'); return; }
           manchePerdue(); return;   // même filet que pour les joueurs
         }
         state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
@@ -2867,6 +2968,12 @@
           // En mort subite, le malus est doublé aussi ; sinon on ne double que les gains.
           if (correct || (state.challenge && state.challenge.risky)) gain *= mlt;
         }
+        /* 💸 Quitte ou double : le contre ne bride pas le meneur, il double sa mise
+           dans les deux sens. C'est le seul effet qui peut lui profiter — c'est
+           voulu : celui qui le pose parie sur son assurance. */
+        if (state.contre && state.contre.eff === 'dbl' && state.contre.targetId === b.id) {
+          gain *= 2; jokerLbl = '💸 quitte ou double';
+        }
         var jk = (state.jok || {})[b.id];
         if (jk === 'x2' && correct) { gain *= 2; jokerLbl = '🃏 ×2'; }
         else if (jk === 'sh' && !correct) { gain = 0; jokerLbl = '🛡️ protégé'; }
@@ -2947,7 +3054,7 @@
       if (appCorrige() && !roundTrack) { manchePerdue(); return; }
       state.grades = {};
       Object.keys(state.answers).forEach(function (id) {
-        var g = fuzzyHit(state.answers[id].text, roundTrack, state.answerMode);
+        var g = fuzzyHit(state.answers[id].text, roundTrack, modeReponse(id));   // « exigence » : le contré doit donner les deux
         state.grades[id] = g || 'ko'; // pré-notation auto, l'hôte peut corriger
       });
       // Partie à l'aveugle : personne ne connaît la réponse, donc personne ne
@@ -3368,8 +3475,15 @@
       if (roundTrack && canPlayInApp() && hostPlays && s.phase !== 'ended') {
         // Lecteur intégré unique : titre MASQUÉ (l'écran est souvent visible de tous),
         // bouton 👁 pour vérifier, 🔄 pour changer de morceau.
-        // À l'aveugle, l'hôte joue aussi : le morceau doit rester secret pour lui.
-        dzCtrl = s.blind ? playerBar(roundTrack, { blind: true }) : playerBar(roundTrack, { onChange: true });
+        /* À l'aveugle, l'hôte joue aussi : le morceau doit rester secret pour lui —
+           titre masqué ET son verrouillé tant que la manche n'est pas ouverte. Entre
+           deux manches, c'est le morceau SUIVANT qui est déjà en mémoire : sans ce
+           verrou, il suffisait d'appuyer sur ▶ avant de lancer pour avoir la réponse. */
+        var avantManche = (s.phase === 'lobby' || s.phase === 'reveal'
+                        || s.phase === 'turbo_reveal' || s.phase === 'year_reveal');
+        dzCtrl = s.blind
+          ? playerBar(roundTrack, { blind: true, verrou: hostCanPlay() && avantManche })
+          : playerBar(roundTrack, { onChange: true });
       } else if (false) {
         dzCtrl = '<div class="glass rounded-2xl p-3 mb-4 flex items-center gap-2">'
           + '<button id="dzToggle" class="px-3 py-2 rounded-lg glass">⏯️</button>'
@@ -3431,21 +3545,35 @@
         var nomsRestants = eligibleBuzzers().map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
         var restants = nomsRestants.length;
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>'
-          + (hostCanBuzz && !hostDejaTente
+          /* L'hôte contré doit VOIR pourquoi il ne peut pas buzzer. Sans ça son
+             bouton restait affiché comme actif et ne faisait rien : un bouton sans
+             effet apparent, exactement ce qu'on s'interdit ailleurs. */
+          + (hostCanBuzz && !hostDejaTente && contreEmpeche(ME)
+              ? (function () {
+                  var ce = CONTRE_EFFETS[contreEmpeche(ME)];
+                  var att = contreEmpeche(ME) === 'slow'
+                    ? 'ton buzz s\'ouvre dans ' + Math.ceil(Math.max(0, (s.contre.openAt || 0) - Date.now()) / 1000) + ' s'
+                    : 'tu joues après la première tentative';
+                  return '<div class="mt-5">' + buzzButton(true, ce.icon, esc(s.contre.by) + ' t\'a contré — ' + att) + '</div>';
+                })()
+              : '')
+          + (hostCanBuzz && !hostDejaTente && !contreEmpeche(ME)
               ? '<div class="mt-5">' + buzzButton(false, 'BUZZ', 'Appuie vite !', 'hostBuzz') + '</div>'
                 /* Sans ça, quand personne ne reconnaît le morceau, l'extrait tournait
                    en boucle sans aucune sortie : il fallait annuler la manche. */
                 + '<button id="hostPass" class="mt-5 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>'
-              : (hostCanBuzz
+              // « déjà tenté » ne vaut QUE si on a vraiment tenté : contré, c'est
+              // le bloc du dessus qui parle, et les deux messages se contredisaient.
+              : (hostCanBuzz && hostDejaTente
                   ? '<p class="mt-5 text-white/45 text-sm">Tu as déjà tenté sur ce titre — au tour des autres.</p>'
                   : ''))
           + (s.contre
-              ? '<div class="glass rounded-xl p-3 mt-4" style="border-color:rgba(244,63,94,.6)">'
-                + '<p class="text-rose-300 font-extrabold text-sm">' + (s.contre.ice ? '🧊 ' : '🚫 ') + esc(s.contre.by)
-                + (s.contre.ice ? ' a gelé ' : ' a contré ') + esc(s.contre.target) + '</p>'
-                + '<p class="text-white/55 text-xs mt-1">' + (s.contre.ice
-                    ? 'Son écran est pris par le givre : il doit le frotter pour revenir.'
-                    : 'Barré sur ce titre : il ne peut pas marquer.') + '</p></div>'
+              ? (function () {
+                  var ci = contreInfo(s.contre);
+                  return '<div class="glass rounded-xl p-3 mt-4" style="border-color:rgba(244,63,94,.6)">'
+                    + '<p class="text-rose-300 font-extrabold text-sm">' + ci.icon + ' ' + esc(s.contre.by) + ' ' + ci.verbe + ' ' + esc(s.contre.target) + '</p>'
+                    + '<p class="text-white/55 text-xs mt-1">' + esc(s.contre.target) + ' : ' + ci.court + '.</p></div>';
+                })()
               : '')
           + (nomsPasses.length
               ? '<div class="glass rounded-xl p-3 mt-4" style="border-color:rgba(251,191,36,.5)">'
@@ -4031,7 +4159,8 @@
       if (joinTries >= 3 && !joinLate) { joinLate = true; renderPlayer(); }
     }, 2500);
 
-    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); clearInterval(joinTimer); hideIce(); } };
+    var _slowT = null;   // minuteur du contre « 🐢 Ralenti »
+    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); clearInterval(joinTimer); clearTimeout(_slowT); hideIce(); } };
 
     function me() { return lastState && lastState.players ? lastState.players[ME] : null; }
 
@@ -4065,7 +4194,11 @@
       var lb = fairArgP ? leaderboardFair(s.players, fairP) : leaderboardArr(s.players);
       var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
       var isBuzzer = s.buzzer && s.buzzer.id === ME;
-      var am = s.answerMode || 'both'; // both | title | artist
+      /* both | title | artist — MON exigence à moi : le contre « 🎯 Exigence » me
+         demande les deux quand les autres n'ont qu'une des deux à trouver. L'écran
+         doit dire la vérité sur ce qu'on attend de MOI, pas la règle générale. */
+      var am = (s.contre && s.contre.eff === 'exig' && s.contre.targetId === ME)
+        ? 'both' : (s.answerMode || 'both');
       var imDJ = s.dj && s.dj.id === ME; // je suis le DJ de la série en cours
       var isSource = s.source && s.source.id === ME;
 
@@ -4220,21 +4353,43 @@
              dernier à décider — sinon on attend sans savoir quoi. */
           var passesP = (s.tried || []).filter(function (id) { return !(s.contre && s.contre.targetId === id); })
             .map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
+          var infoC = s.contre ? contreInfo(s.contre) : null;
           var bandeauP = (s.contre
-              ? '<p class="mt-4 text-rose-300 text-sm font-bold">' + (s.contre.ice ? '🧊 ' : '🚫 ') + esc(s.contre.by)
-                + (s.contre.ice ? ' a gelé ' : ' a contré ') + esc(s.contre.target) + '</p>'
+              ? '<p class="mt-4 text-rose-300 text-sm font-bold">' + infoC.icon + ' ' + esc(s.contre.by)
+                + ' ' + infoC.verbe + ' ' + esc(s.contre.target) + '</p>'
               : '')
             + (passesP.length
               ? '<p class="mt-3 text-neon-gold text-sm font-bold">🤷 ' + esc(passesP.join(', ')) + ' ' + (passesP.length > 1 ? 'passent' : 'passe') + ' ce titre</p>'
               : '');
-          if (s.contre && s.contre.targetId === ME && s.contre.ice)
+          var passeBtn = '<button id="pass" class="mt-4 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>';
+          var ciblé = s.contre && s.contre.targetId === ME;
+          var effC = ciblé ? (s.contre.eff || (s.contre.ice ? 'ice' : 'block')) : null;
+          if (ciblé && effC === 'ice')
             // Gelé : on PEUT encore jouer, une fois l'écran dégagé — on ne l'élimine pas.
             center = (iceVisible()
               ? buzzButton(true, '🧊', 'Écran gelé par ' + s.contre.by + ' — frotte pour te dégager')
-              : buzzButton(false, 'BUZZ', 'Dégelé ! Rattrape-les 🔥')
-                + '<button id="pass" class="mt-4 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>')
+              : buzzButton(false, 'BUZZ', 'Dégelé ! Rattrape-les 🔥') + passeBtn)
               + bandeauP;
-          else if (s.contre && s.contre.targetId === ME)
+          else if (ciblé && effC === 'slow') {
+            /* Ralenti : le bouton se rouvre tout seul à la fin du décompte — d'où le
+               minuteur plus bas. Sans lui, l'écran restait bloqué jusqu'au prochain
+               message de l'hôte, et le joueur croyait avoir été éliminé. */
+            var reste = Math.ceil(Math.max(0, (s.contre.openAt || 0) - Date.now()) / 1000);
+            center = (reste > 0
+              ? buzzButton(true, '🐢', 'Ralenti par ' + s.contre.by + ' — ton buzz s\'ouvre dans ' + reste + ' s')
+              : buzzButton(false, 'BUZZ', 'C\'est ouvert ! Rattrape-les 🔥') + passeBtn)
+              + bandeauP;
+          } else if (ciblé && effC === 'second') {
+            var libre = (s.tried || []).length > 0;
+            center = (libre
+              ? buzzButton(false, 'BUZZ', 'À toi maintenant 🔥') + passeBtn
+              : buzzButton(true, '🥈', 'Second couteau — tu joues après la première tentative'))
+              + bandeauP;
+          } else if (ciblé && effC === 'exig')
+            center = buzzButton(false, 'BUZZ', '🎯 Corsé : il te faudra le titre ET l\'artiste') + passeBtn + bandeauP;
+          else if (ciblé && effC === 'dbl')
+            center = buzzButton(false, 'BUZZ', '💸 Quitte ou double : tes points comptent double') + passeBtn + bandeauP;
+          else if (ciblé)
             center = buzzButton(true, '🚫', 'Contré par ' + s.contre.by + ' — tu ne joues pas ce titre') + bandeauP;
           else if ((s.tried || []).indexOf(ME) >= 0)
             center = buzzButton(true, '⏳', 'Tu as déjà tenté — au tour des autres') + bandeauP;
@@ -4402,6 +4557,15 @@
       bind('#jokX2', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'x2' }); beep(920, 0.1, 'sine'); vibrate(50); toast('Joker ×2 activé 🃏', 'ok'); });
       bind('#jokSh', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'sh' }); beep(700, 0.1, 'sine'); vibrate(50); toast('Bouclier activé 🛡️', 'ok'); });
       bind('#jokContre', function () { chan.sendIntent({ action: 'contre', id: ME }); beep(160, 0.2, 'sawtooth'); vibrate(60); });
+      /* 🐢 Ralenti : rien ne viendra du serveur à la fin du décompte — c'est un délai,
+         pas un évènement. Sans ce minuteur, l'écran restait bloqué et le joueur se
+         croyait éliminé alors que son buzz s'était rouvert. */
+      if (_slowT) { clearTimeout(_slowT); _slowT = null; }
+      if (s.phase === 'buzzing' && s.contre && s.contre.eff === 'slow'
+          && s.contre.targetId === ME && Date.now() < (s.contre.openAt || 0)) {
+        _slowT = setTimeout(function () { _slowT = null; renderPlayer(); },
+                            Math.max(250, s.contre.openAt - Date.now()) + 60);
+      }
       // Contrôles du DJ de la série (depuis son propre téléphone)
       // Le DJ choisit son morceau depuis son téléphone (reste caché jusqu'au verdict)
       bind('#djPickTrack', function () {

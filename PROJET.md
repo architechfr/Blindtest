@@ -139,6 +139,36 @@ Record dans `bt.soloBest`, réglages dans `bt.soloPls` / `bt.soloAns` / `bt.solo
 - Le chrono met à jour **son seul élément** (`#soChrono`) : redessiner effacerait la
   réponse en cours de saisie.
 
+### 🚫 Le contre et ses effets (`CONTRE_EFFETS`, réglage « Effet du contre »)
+Le seul joker qui vise **quelqu'un d'autre** : il cible automatiquement le meneur,
+s'utilise avant le premier buzz, une seule fois par manche pour toute la table, et
+jamais par le meneur lui-même. Six effets + **🎲 Au hasard** (tirage à chaque contre).
+
+| Effet | Ce qu'il fait | Nature |
+|---|---|---|
+| 🧊 **Écran gelé** | Givre à frotter au doigt pour revenir | fait perdre du temps |
+| 🐢 **Ralenti** | Son buzz s'ouvre 5 s après les autres | fait perdre du temps |
+| 🎯 **Exigence** | Il doit donner titre **ET** artiste | relève la barre |
+| 💸 **Quitte ou double** | Ses points comptent double, en bien comme en mal | pari |
+| 🥈 **Second couteau** | Ne peut buzzer qu'après une 1ʳᵉ tentative | fait patienter |
+| 🚫 **Barré sec** | Ne joue pas ce titre | élimine (assumé) |
+
+**Trois règles d'arbitrage que tout nouvel effet doit respecter** (écrites dans le code
+au-dessus de la table) :
+1. **Aucun n'élimine définitivement** — sauf « barré sec », assumé comme la version brutale.
+2. **Aucun ne demande d'arbitrage humain** : la règle se résout seule, sinon la soirée
+   s'arrête pour discuter.
+3. **Tous fonctionnent avec une enceinte unique.** C'est pour ça qu'il n'y a pas de
+   « son coupé » : couper le son du visé couperait celui de toute la table.
+
+Points d'implémentation :
+- `contreEmpeche(id)` est **séparé** de `canBuzz`/`eligibleBuzzers` : le visé reste
+  « quelqu'un qui peut encore répondre », sinon la manche se clôturait toute seule en
+  le croyant hors jeu alors qu'il allait pouvoir jouer.
+- `modeReponse(id)` porte l'exigence : c'est un `answerMode` **par joueur**.
+- 🐢 Ralenti a besoin d'un `setTimeout` côté joueur (`_slowT`) : la fin du délai n'est
+  pas un évènement réseau, personne ne rafraîchira l'écran sinon.
+
 ### Mécaniques
 - **Rotation DJ** — le DJ choisit ses morceaux, les lance, **valide**, **enchaîne** et
   peut **terminer la partie** depuis son propre téléphone (intention `endGame`, limitée
@@ -326,7 +356,25 @@ Record dans `bt.soloBest`, réglages dans `bt.soloPls` / `bt.soloAns` / `bt.solo
    bonne moitié du plaisir en soirée. `reponseDite()` à la révélation (buzz) et le
    texte de chacun dans le récapitulatif Turbo. Règle générale : **un écran de
    verdict doit rappeler ce sur quoi il porte.**
-25. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
+25. **Masquer le titre ne suffit pas à garder un secret : il faut couper le son.**
+   À l'aveugle, le lecteur de l'hôte affichait « morceau caché » mais le bouton ▶
+   restait actif — et entre deux manches, c'est le morceau **suivant** qui est déjà
+   en mémoire. Il suffisait d'écouter avant de lancer. Verrou `opts.verrou` sur
+   `playerBar` tant que la manche n'est pas ouverte pour tous.
+26. **Un réglage affiché doit être celui qui s'appliquera vraiment.** « Tous à
+   l'aveugle » joue en Turbo mais affichait le barème au buzz (+5 / −2), inutilisé ;
+   et les points de vote étaient réglables dans des parties où personne ne vote.
+   `syncPointsUI()` lit désormais le mode **effectif** (`setupBlindPlay` à l'aveugle,
+   `setupMode` sinon). À appeler **après** `syncSections`, qui réaffiche tout.
+27. **Deux réglages pour la même chose, dont un inerte.** « Finale à l'aveugle :
+   ON/OFF » n'a jamais rien fait : `finalN` (Aucune/3/5/10) est toujours défini et
+   `nFinal` le préfère systématiquement. Retiré. Chercher `x != null ? x : y` :
+   quand `x` est toujours défini, `y` est du code mort — et son interrupteur aussi.
+28. **« À moitié » n'est pas « faux ».** La correction automatique passait
+   `validate(suggest === 'ok', suggest === 'half')` : une réponse à moitié bonne
+   partait donc en `correct = false` et prenait le **malus complet**, avec un écran
+   qui annonçait « Raté ! −2 (à moitié) ». Révélé par l'effet 🎯 Exigence.
+29. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
    handicap Dingo devait être posé dans `validate()` (buzz), sur les votes **et**
    dans `applyTurbo()` — sinon un simple changement de mode l'annulait en silence.
    Même piège que l'asymétrie hôte/joueur : une règle écrite à un seul endroit ne

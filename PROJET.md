@@ -109,7 +109,24 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
   En Turbo sa propre note est celle de l'app (`_autoGraded`, bouton verrouillé).
   En mode Année, l'année du morceau s'impose s'il a deviné lui aussi.
   Les scores ne se corrigent pas à la main non plus.
-- **Combos** (série de bonnes réponses) · **Jokers** (🃏 ×2, 🛡️ bouclier)
+- **Combos** (série de bonnes réponses) · **Jokers** (🃏 ×2, 🛡️ bouclier, 🧊 contre)
+- **🧊 Contre** — le seul joker **offensif**, réservé à ceux qui ne mènent pas. Il vise
+  **le meneur** (`leaderId()`, personne en cas d'égalité en tête), s'utilise **avant le
+  premier buzz** et **une seule fois par manche** pour toute la table. Deux effets au
+  choix (réglage *Effet du contre*) :
+  · `ice` (défaut) — **écran gelé** : le meneur voit son écran pris par le givre et doit
+  le **frotter au doigt** pour le dégager (55 % de surface). Il perd des secondes mais
+  reste dans la manche. Filet : libération automatique au bout de 12 s si le calcul de
+  dégagement échoue — on ne piège jamais personne dans un écran bloqué.
+  · `block` — **barré sec** : ajouté à `tried`, il ne joue pas ce titre.
+  Le canvas du givre vit **hors de `#app`** : les rendus joueur reconstruisent `#app`
+  en permanence et l'effaceraient.
+- **Après une tentative ratée, on ne vote plus** — celui qui a répondu faux (−2)
+  récupérait aussitôt +2 en votant sur la réponse du rebond : son erreur ne lui coûtait
+  plus rien. Ceux qui sont dans `tried` sont exclus du vote **et** du décompte des
+  votants attendus (sinon le total n'était jamais atteint).
+- **Bouton plein écran flottant** (`#fsFloat`), présent sur **tous** les écrans — il
+  n'existait que dans les Réglages.
 - **Bonus qui reviennent** (`grantBonuses`) — un joker consommé était perdu pour toute
   la partie. Deux robinets opposés : **3 bonnes réponses d'affilée → 🃏 ×2** (récompense
   les forts) et **distancé de 3 × la valeur d'une bonne réponse → 🛡️** (fait revenir les
@@ -130,8 +147,9 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
   réécrit **plus** le pseudo à chaque intention reçue : chaque buzz / passe / réponse
   porte le nom stocké sur le téléphone du joueur, et le réappliquer annulait la
   correction de l'hôte dès la première action. Le nom du téléphone ne s'applique
-  qu'à l'arrivée (`join`), et jamais si l'hôte a corrigé. L'en-tête du joueur affiche
-  le nom **de la partie**, pas le sien en local.
+  qu'à la **première** arrivée, et jamais si l'hôte a corrigé — un joueur qui revient
+  garde son nom, sinon il lui suffisait de se reconnecter pour se rebaptiser en pleine
+  partie. L'en-tête du joueur affiche le nom **de la partie**, pas le sien en local.
 - **Qui peut encore buzzer** = `eligibleBuzzers()` / `canBuzz(id)`, **une seule
   définition** partagée par le buzz joueur, le buzz hôte, le « je passe » et le calcul
   du rebond. La règle existait en trois exemplaires : l'hôte y échappait (il rebuzzait

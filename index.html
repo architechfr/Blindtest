@@ -269,6 +269,15 @@
   <!-- Lecteur audio (extraits Deezer, sur l'appareil hôte) -->
   <audio id="dzaudio" preload="auto"></audio>
 
+  <!-- Plein écran : flottant, donc disponible sur TOUS les écrans (accueil, salon,
+       manche en cours) sans avoir à passer par les Réglages. -->
+  <button id="fsFloat" type="button" aria-label="Plein écran"
+    class="fixed top-2 right-2 z-[65] w-9 h-9 rounded-full glass text-white/60 text-sm flex items-center justify-center active:animate-pop">⛶</button>
+
+  <!-- Écran gelé (mode « casse la glace ») -->
+  <canvas id="iceLayer" class="hidden fixed inset-0 z-[70] touch-none"></canvas>
+  <div id="iceHint" class="hidden fixed inset-x-0 top-1/3 z-[71] text-center pointer-events-none px-8"></div>
+
   <!-- Confettis + Toasts -->
   <canvas id="confetti" aria-hidden="true"></canvas>
   <div id="toasts" class="fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4 pointer-events-none"></div>
@@ -981,6 +990,92 @@
     else { _confCtx.clearRect(0, 0, W, H); _confRAF = 0; }
   }
 
+  /* ---------------------------------------------------------------
+     ÉCRAN GELÉ — « casse la glace ». Le joueur visé par un contre voit
+     son écran pris par le givre : il doit le FROTTER au doigt pour
+     retrouver l'accès. Ça ne l'élimine pas, ça lui coûte des secondes —
+     de quoi laisser une chance aux autres sans humilier personne.
+     Le canvas vit HORS de #app : les rendus de l'écran joueur
+     reconstruisent #app en permanence et l'effaceraient sinon.
+     --------------------------------------------------------------- */
+  var _ice = { on: false, cleared: false, ctx: null, need: 0.55, cb: null, checkAt: 0 };
+  function iceVisible() { return _ice.on && !_ice.cleared; }
+  function hideIce() {
+    _ice.on = false; _ice.cleared = false; _ice.cb = null;
+    var c = document.getElementById('iceLayer'), h = document.getElementById('iceHint');
+    if (c) c.classList.add('hidden');
+    if (h) h.classList.add('hidden');
+  }
+  function showIce(par, onCleared) {
+    var c = document.getElementById('iceLayer'), h = document.getElementById('iceHint');
+    if (!c || _ice.on) return;
+    _ice.on = true; _ice.cleared = false; _ice.cb = onCleared || null;
+    var w = c.width = window.innerWidth, hh = c.height = window.innerHeight;
+    var g = c.getContext('2d'); _ice.ctx = g;
+    // Givre : bleu très clair, opaque, avec des cristaux pour que ce soit lisible.
+    var grd = g.createLinearGradient(0, 0, w, hh);
+    grd.addColorStop(0, 'rgba(214,240,255,.97)');
+    grd.addColorStop(.5, 'rgba(168,216,247,.97)');
+    grd.addColorStop(1, 'rgba(226,246,255,.97)');
+    g.fillStyle = grd; g.fillRect(0, 0, w, hh);
+    g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 2;
+    for (var i = 0; i < 90; i++) {
+      var x = Math.random() * w, y = Math.random() * hh, r = 8 + Math.random() * 26;
+      g.beginPath();
+      for (var k = 0; k < 6; k++) {
+        var a = (Math.PI / 3) * k;
+        g.moveTo(x, y); g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      }
+      g.stroke();
+    }
+    c.classList.remove('hidden');
+    if (h) {
+      h.innerHTML = '<div class="inline-block px-5 py-3 rounded-2xl" style="background:rgba(10,3,26,.72)">'
+        + '<div class="text-5xl mb-1">🧊</div>'
+        + '<p class="bt-title text-xl font-extrabold text-white">ÉCRAN GELÉ</p>'
+        + '<p class="text-white/80 text-sm mt-1">' + esc(par || '') + ' t\'a gelé — <b>frotte l\'écran</b> pour le dégager</p></div>';
+      h.classList.remove('hidden');
+    }
+    var frotter = function (ev) {
+      if (!_ice.on || _ice.cleared) return;
+      ev.preventDefault();
+      var pts = ev.touches ? ev.touches : [ev];
+      for (var j = 0; j < pts.length; j++) {
+        var rect = c.getBoundingClientRect();
+        var px = pts[j].clientX - rect.left, py = pts[j].clientY - rect.top;
+        g.save(); g.globalCompositeOperation = 'destination-out';
+        g.beginPath(); g.arc(px, py, 42, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+      // Le calcul du dégagement est coûteux : on n'échantillonne que par intervalles.
+      var now = Date.now();
+      if (now - _ice.checkAt < 120) return;
+      _ice.checkAt = now;
+      try {
+        var pas = 16, vus = 0, clairs = 0;
+        var d = g.getImageData(0, 0, c.width, c.height).data;
+        for (var y2 = 0; y2 < c.height; y2 += pas) {
+          for (var x2 = 0; x2 < c.width; x2 += pas) {
+            var idx = ((y2 * c.width) + x2) * 4 + 3;
+            vus++; if (d[idx] < 40) clairs++;
+          }
+        }
+        if (vus && (clairs / vus) >= _ice.need) {
+          _ice.cleared = true;
+          beep(1200, 0.18, 'sine'); vibrate([0, 40, 30, 60]);
+          var cb = _ice.cb; hideIce();
+          if (cb) cb();
+        }
+      } catch (e) { /* getImageData peut échouer : on ne bloque jamais le jeu */ }
+    };
+    c.onmousemove = frotter; c.ontouchmove = frotter;
+    c.onmousedown = frotter; c.ontouchstart = frotter;
+    /* Filet de sécurité : si le dégagement ne se calcule pas (canvas protégé,
+       navigateur exotique), on libère au bout de 12 s — on ne piège personne. */
+    setTimeout(function () {
+      if (_ice.on && !_ice.cleared) { _ice.cleared = true; var cb2 = _ice.cb; hideIce(); if (cb2) cb2(); }
+    }, 12000);
+  }
+
   function toast(msg, kind) {
     var c = { ok: 'bg-neon-lime text-black', err: 'bg-rose-500', info: 'bg-neon-violet' }[kind || 'info'];
     var el = document.createElement('div');
@@ -1109,6 +1204,21 @@
     return renderHome();
   }
   window.addEventListener('hashchange', route);
+
+  /* Plein écran : accessible partout, pas seulement depuis les Réglages. */
+  (function () {
+    var fb = document.getElementById('fsFloat');
+    if (!fb) return;
+    var maj = function () { fb.textContent = document.fullscreenElement ? '⤡' : '⛶'; };
+    fb.onclick = function () {
+      try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen();
+      } catch (e) {}
+    };
+    document.addEventListener('fullscreenchange', maj);
+    maj();
+  })();
   /* Naviguer en étant sûr que la vue change : affecter un hash identique
      ne déclenche pas d'événement, ce qui donnait des boutons « sans effet ». */
   function go(h) {
@@ -1310,7 +1420,13 @@
       '    <button type="button" id="suCombos" class="py-3 rounded-xl text-sm font-bold bg-neon-gold text-black">🔥 Combos</button>',
       '    <button type="button" id="suJokers" class="py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black">🃏 Jokers</button>',
       '  </div>',
-      '  <p class="text-white/40 text-xs mb-5"><b>Combos</b> : bonnes réponses d\'affilée = bonus croissant (+1, +2, +3). <b>Jokers</b> : chaque joueur reçoit 1 × « ×2 » (double ses points) et 1 × « 🛡️ bouclier » (annule un malus), à jouer quand il veut.</p>',
+      '  <p class="text-white/40 text-xs mb-3"><b>Combos</b> : bonnes réponses d\'affilée = bonus croissant (+1, +2, +3). <b>Jokers</b> : chacun reçoit 1 × « 🃏 ×2 » (double ses points), 1 × « 🛡️ bouclier » (annule un malus) et 1 × « contre » (vise <b>le meneur</b>). On en regagne en enchaînant 3 bonnes réponses, ou en étant distancé.</p>',
+      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">Effet du contre</p>',
+      '  <div class="grid grid-cols-2 gap-2 mb-2">',
+      '    <button type="button" class="suContre py-3 rounded-xl text-sm font-bold bg-neon-cyan text-black" data-contre="ice">🧊 Écran gelé</button>',
+      '    <button type="button" class="suContre py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-contre="block">🚫 Barré sec</button>',
+      '  </div>',
+      '  <p class="text-white/40 text-xs mb-5"><b>🧊 Écran gelé</b> : le meneur voit son écran pris par le givre et doit le <b>frotter au doigt</b> pour revenir — il perd de précieuses secondes mais reste dans la manche. <b>🚫 Barré sec</b> : il ne joue pas ce titre du tout.</p>',
       '  </div>',
 
       '  <div id="secFinal">',
@@ -1476,7 +1592,14 @@
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
       };
     });
-    var setupCombos = 1, setupJokers = 1, setupWheel = 0;
+    var setupCombos = 1, setupJokers = 1, setupWheel = 0, setupContre = 'ice';
+    Array.prototype.forEach.call(document.querySelectorAll('.suContre'), function (b) {
+      b.onclick = function () {
+        setupContre = b.getAttribute('data-contre');
+        Array.prototype.forEach.call(document.querySelectorAll('.suContre'), function (x) { x.className = x.className.replace('bg-neon-cyan text-black', 'bg-black/30 text-white/70'); });
+        b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-cyan text-black');
+      };
+    });
     (function () {
       var wb = document.getElementById('suWheel');
       if (wb) wb.onclick = function () {
@@ -1663,6 +1786,7 @@
         st.djRotate = setupDj !== 0 ? 1 : 0; st.djEvery = setupDj || 5;
         st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
+        st.contreMode = setupContre;   // 'ice' (écran gelé) ou 'block' (barré sec)
         st.blindFinal = setupBlindFinal;
         st.hostPlays = setupHostPlays;
         /* Manches à l'aveugle « en fin de tour » : sans rotation de DJ, il n'y a pas
@@ -1708,7 +1832,7 @@
       buzzOpenAt: 0, buzzMs: null, voteAt: 0, tried: [],
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, _djLeft: 0, _djSpan: 0, dj: null,
-      goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {},
+      goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {}, contreMode: 'ice',
       wheel: 0, challenge: null, mult: 1, audioMode: 'device', blind: 0,
       blindFinal: 0, blindRound: 0, hostPlays: 1,
       players: {},   // id -> { id, name, score, team }
@@ -1824,9 +1948,11 @@
         // played = manches où le joueur POUVAIT marquer (il n'était ni DJ ni fredonneur).
         // djTurns = nombre de titres passés aux commandes. Sert à l'équité du classement.
         // streak = bonnes réponses d'affilée (combo) ; jx2 / jsh = jokers restants.
+        // jct = 🚫 Contre : le seul joker offensif (barre le meneur sur un titre).
         state.players[id] = { id: id, name: name || 'Joueur', score: 0, team: null, ord: maxOrd + 1,
                               played: 0, djTurns: 0, streak: 0, best: 0,
-                              jx2: state.jokers ? 1 : 0, jsh: state.jokers ? 1 : 0 };
+                              jx2: state.jokers ? 1 : 0, jsh: state.jokers ? 1 : 0,
+                              jct: state.jokers ? 1 : 0 };
         if (state.teams) assignTeam(state.players[id]);
       }
       /* On ne réécrit PLUS le pseudo ici. Chaque intention (buzz, passe, réponse…)
@@ -1846,10 +1972,13 @@
     function onIntent(p) {
       if (!p || !p.id) return;
       if (p.action === 'join') {
+        var connu = !!state.players[p.id];
         var jp = ensurePlayer(p.id, p.name);
-        /* Le pseudo du téléphone ne s'applique qu'à l'arrivée — et JAMAIS s'il a été
-           corrigé par l'hôte : c'est sa partie, sa correction fait autorité. */
-        if (p.name && !jp.renamedByHost) jp.name = p.name;
+        /* Le pseudo du téléphone ne compte QU'À LA PREMIÈRE ARRIVÉE. Un joueur qui
+           revient garde son nom : sinon il lui suffisait de se reconnecter pour se
+           rebaptiser en pleine partie (et brouiller le classement). Seul l'hôte
+           renomme, et sa correction fait autorité. */
+        if (p.name && !connu && !jp.renamedByHost) jp.name = p.name;
         beep(880, 0.08, 'sine');
         publish();
       } else if (p.action === 'buzz') {
@@ -1905,6 +2034,34 @@
         else return;
         beep(920, 0.12, 'sine');
         publish();
+      } else if (p.action === 'contre') {
+        /* 🚫 CONTRE — le seul joker qui vise QUELQU'UN D'AUTRE. On barre le meneur
+           sur ce titre : il ne peut plus buzzer, donc plus marquer. Réservé à ceux
+           qui ne mènent pas (sinon le meneur se protège lui-même), un seul par
+           manche pour toute la table, et jamais une fois le buzz parti — sinon on
+           annulerait une réponse déjà donnée.
+           Réutilise `tried` / `canBuzz` : la mécanique de verrouillage existe déjà. */
+        var cp = state.players[p.id];
+        if (!cp || !state.jokers || (cp.jct || 0) <= 0) return;
+        if (state.contre) return;                                   // un seul contre par manche
+        if (state.phase !== 'armed' && state.phase !== 'buzzing') return;
+        if (state.buzzer) return;
+        var meneur = leaderId();
+        if (!meneur || meneur === p.id) return;                     // on ne se contre pas soi-même
+        if (!canBuzz(meneur)) return;                               // déjà hors course
+        cp.jct--;
+        /* Deux effets au choix (réglage « Effet du contre ») :
+             ice   → écran gelé, il doit le frotter pour revenir (il perd du temps)
+             block → barré sec, il ne joue pas ce titre
+           Le gel est plus vivant : il laisse une chance au lieu d'éliminer. */
+        var glace = (state.contreMode || 'ice') === 'ice';
+        if (!glace) state.tried = (state.tried || []).concat([meneur]);
+        state.contre = { by: cp.name, target: (state.players[meneur] || {}).name || '',
+                         targetId: meneur, ice: glace ? 1 : 0 };
+        beep(160, 0.3, 'sawtooth'); vibrate([0, 80, 40, 80]);
+        toast((glace ? '🧊 ' : '🚫 ') + state.contre.by + ' gèle ' + state.contre.target + ' !', 'info');
+        if (!eligibleBuzzers().length) { noOneKnows(); return; }
+        publish();
       } else if (p.action === 'race') {
         // Mode Turbo : chacun envoie sa réponse, on horodate pour le barème vitesse.
         if (state.phase === 'racing' && !state.answers[p.id] && !(state.dj && state.dj.id === p.id)) {
@@ -1918,7 +2075,12 @@
           if (chan) chan.sendProgress({ count: Object.keys(state.answers).length, total: Object.keys(state.players).length, from: p.id, ms: state.answers[p.id].ms, name: rp.name });
         }
       } else if (p.action === 'vote') {
-        if (state.phase === 'voting' && state.buzzer && state.buzzer.id !== p.id) {
+        /* Qui a déjà tenté sa chance sur ce titre NE VOTE PLUS. Sans ça, celui qui
+           venait de répondre faux (−2) rebuzzait mentalement en votant sur la
+           réponse suivante et récupérait +2 aussitôt : sa mauvaise réponse ne lui
+           coûtait plus rien. On a raté, on regarde. */
+        if (state.phase === 'voting' && state.buzzer && state.buzzer.id !== p.id
+            && (state.tried || []).indexOf(p.id) < 0) {
           state.votes[p.id] = p.value === 1 ? 1 : -1;
           // L'hôte a répondu et personne d'autre ne peut juger : dès que tout le
           // monde a voté, le verdict tombe sans que l'hôte ait à toucher à rien.
@@ -2006,7 +2168,7 @@
       state.reveal = null; state.suggest = null;
       state.buzzOpenAt = 0; state.buzzMs = null; state.voteAt = 0; state.tried = [];
       state.answers = {}; state.grades = {}; state.turboScores = null; state.jok = {};
-      state.bonusMsg = null; state._autoGraded = null;
+      state.bonusMsg = null; state._autoGraded = null; state.contre = null;
     }
     function armBuzz() {
       state.phase = 'armed';
@@ -2148,6 +2310,15 @@
       });
     }
     function canBuzz(id) { return eligibleBuzzers().indexOf(id) >= 0; }
+    /* Le meneur au moment présent — cible du 🚫 Contre. En cas d'égalité en tête,
+       personne ne mène : on ne barre pas quelqu'un au hasard. */
+    function leaderId() {
+      var arr = Object.keys(state.players).map(function (k) { return state.players[k]; });
+      if (arr.length < 2) return null;
+      arr.sort(function (a, b) { return b.score - a.score; });
+      if (arr[0].score === arr[1].score) return null;
+      return arr[0].id;
+    }
 
     /* Personne ne trouve : on révèle le titre et on clôt la manche, au lieu de laisser
        le morceau tourner en boucle sans que personne sache quoi répondre. */
@@ -2180,7 +2351,10 @@
     /* Le vote des autres est-il complet ? (tout le monde sauf celui qui a répondu) */
     function voteComplete() {
       var t = tallyVotes();
-      var expected = Math.max(0, Object.keys(state.players).length - 1);
+      // Même règle que l'affichage : ceux qui ont déjà tenté ce titre ne votent plus.
+      var expected = Object.keys(state.players).filter(function (id) {
+        return !(state.buzzer && state.buzzer.id === id) && (state.tried || []).indexOf(id) < 0;
+      }).length;
       return expected > 0 && (t.up + t.down) >= expected;
     }
 
@@ -2291,10 +2465,12 @@
             msgs.push('🔥 ' + p.name + ' · ' + p.streak + ' d\'affilée → 🃏 ×2');
           }
         }
-        // On ne redonne un bouclier qu'à quelqu'un qui n'a plus rien en main.
-        if ((top - p.score) >= seuil && ((p.jx2 || 0) + (p.jsh || 0)) < 1) {
-          p.jsh = (p.jsh || 0) + 1;
-          msgs.push('🫱 ' + p.name + ' · distancé → 🛡️ bouclier');
+        /* On ne réarme qu'un joueur qui n'a plus rien en main. Distancé, on donne
+           d'abord le 🚫 Contre : barrer le meneur fait revenir bien plus qu'un
+           bouclier, qui ne fait que limiter la casse. */
+        if ((top - p.score) >= seuil && ((p.jx2 || 0) + (p.jsh || 0) + (p.jct || 0)) < 1) {
+          if ((p.jct || 0) < 1) { p.jct = 1; msgs.push('🫱 ' + p.name + ' · distancé → 🚫 contre'); }
+          else { p.jsh = (p.jsh || 0) + 1; msgs.push('🫱 ' + p.name + ' · distancé → 🛡️ bouclier'); }
         }
       });
       state.bonusMsg = msgs.length ? msgs : null;
@@ -2439,7 +2615,7 @@
       Object.keys(state.players).forEach(function (id) {
         var p = state.players[id];
         p.score = 0; p.played = 0; p.djTurns = 0; p.streak = 0; p.best = 0; p._giftAt = 0;
-        p.jx2 = state.jokers ? 1 : 0; p.jsh = state.jokers ? 1 : 0;
+        p.jx2 = state.jokers ? 1 : 0; p.jsh = state.jokers ? 1 : 0; p.jct = state.jokers ? 1 : 0;
       });
       state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
       state._djIdx = -1; state.djCount = 0; state.dj = null; state._djLeft = 0; state._djSpan = 0;
@@ -2835,7 +3011,9 @@
         /* Qui a renoncé, qui reste : par NOM. Un compteur (« 1 joueur peut encore
            répondre ») ne disait ni qu'on passait, ni qui — l'animateur ne voyait
            donc rien passer et attendait un buzz qui ne venait jamais. */
-        var nomsPasses = (s.tried || []).map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
+        // Le joueur contré n'a pas « passé » : il a été barré. On ne mélange pas les deux.
+        var nomsPasses = (s.tried || []).filter(function (id) { return !(s.contre && s.contre.targetId === id); })
+          .map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
         var nomsRestants = eligibleBuzzers().map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
         var restants = nomsRestants.length;
         phaseBlock = '<div class="glass rounded-2xl p-8 text-center animate-slidein"><div class="text-6xl mb-2 animate-pulse">' + (isFred ? '🎶' : '🔔') + '</div><p class="text-2xl font-extrabold text-neon-lime">' + (isFred ? esc(s.source ? s.source.name : '') + ' FREDONNE' : 'BUZZ OUVERT') + '</p><p class="text-white/50">En attente du premier buzz…' + fredTag + '</p>'
@@ -2847,6 +3025,14 @@
               : (hostCanBuzz
                   ? '<p class="mt-5 text-white/45 text-sm">Tu as déjà tenté sur ce titre — au tour des autres.</p>'
                   : ''))
+          + (s.contre
+              ? '<div class="glass rounded-xl p-3 mt-4" style="border-color:rgba(244,63,94,.6)">'
+                + '<p class="text-rose-300 font-extrabold text-sm">' + (s.contre.ice ? '🧊 ' : '🚫 ') + esc(s.contre.by)
+                + (s.contre.ice ? ' a gelé ' : ' a contré ') + esc(s.contre.target) + '</p>'
+                + '<p class="text-white/55 text-xs mt-1">' + (s.contre.ice
+                    ? 'Son écran est pris par le givre : il doit le frotter pour revenir.'
+                    : 'Barré sur ce titre : il ne peut pas marquer.') + '</p></div>'
+              : '')
           + (nomsPasses.length
               ? '<div class="glass rounded-xl p-3 mt-4" style="border-color:rgba(251,191,36,.5)">'
                 + '<p class="text-neon-gold font-extrabold text-sm">🤷 ' + esc(nomsPasses.join(', ')) + ' ' + (nomsPasses.length > 1 ? 'passent' : 'passe') + ' ce titre</p>'
@@ -2875,9 +3061,14 @@
         // Temps laissé aux autres joueurs pour voter avant que le DJ tranche.
         var voteSecs = (s.config && s.config.voteSecs) || 10;
         var left = s.voteAt ? Math.max(0, Math.ceil((s.voteAt + voteSecs * 1000 - Date.now()) / 1000)) : 0;
-        var expected = Math.max(0, lb.length - 1); // tout le monde sauf celui qui a buzzé
+        // Votants attendus : tout le monde SAUF celui qui a buzzé et ceux qui ont
+        // déjà tenté ce titre (ils ne votent plus). Sinon le total n'est jamais atteint.
+        var expected = lb.filter(function (q) {
+          return q.id !== s.buzzer.id && (s.tried || []).indexOf(q.id) < 0;
+        }).length;
         var allVoted = expected > 0 && (t.up + t.down) >= expected;
-        var canDecide = (left === 0) || allVoted;
+        // expected === 0 : plus personne n'a le droit de voter — rien à attendre.
+        var canDecide = (left === 0) || allVoted || expected === 0;
         var moiQuiReponds = hostIsAnswering(), jugeAilleurs = otherJudge();
         phaseBlock = [
           '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
@@ -2886,7 +3077,7 @@
           (s.suggest ? '  <p class="text-sm font-bold mb-1 ' + (s.suggest === 'ok' ? 'text-neon-lime' : s.suggest === 'half' ? 'text-neon-gold' : 'text-rose-400') + '">💡 Suggestion : ' + (s.suggest === 'ok' ? '✓ probablement correct' : s.suggest === 'half' ? '≈ à moitié (une seule des deux)' : '✗ probablement faux') + '</p>' : ''),
           '  <div class="flex justify-center gap-6 text-xl my-4"><span>👍 ' + t.up + '</span><span>👎 ' + t.down + '</span><span class="text-white/40 text-sm self-center">' + (t.up + t.down) + '/' + expected + ' votes</span></div>',
           (canDecide
-            ? '  <p class="text-neon-lime text-sm font-bold mb-2">' + (allVoted ? 'Tout le monde a voté ✓' : 'Temps de vote écoulé') + '</p>'
+            ? '  <p class="text-neon-lime text-sm font-bold mb-2">' + (allVoted ? 'Tout le monde a voté ✓' : expected === 0 ? 'Personne ne peut voter sur ce titre — à toi de trancher' : 'Temps de vote écoulé') + '</p>'
             : '  <div class="mb-3"><div id="voteLeft" class="text-4xl font-extrabold text-neon-cyan glow-cyan">' + left + '</div><p class="text-white/50 text-xs">temps de vote… laisse les autres répondre</p></div>'),
           /* C'est l'hôte qui a répondu : aucun bouton de verdict pour lui.
              Le verdict vient des autres — ou du juge, s'il y en a un. */
@@ -3317,6 +3508,7 @@
     var lastState = null;
     var voted = false, guessed = false, answered = false, lastPhase = null;
     var raceMine = null, raceCount = 0, raceTotal = 0; // suivi local du mode Turbo
+    var iceRound = -1;                                 // manche où le givre a déjà été posé
     // Morceau choisi par le DJ sur SON téléphone. Gardé en local : il n'est
     // transmis qu'au moment du verdict, donc personne ne peut le lire avant.
     var myTrack = null;
@@ -3339,6 +3531,17 @@
         if (st.phase === 'year_reveal' && lastPhase !== 'year_reveal' && st.result && (st.result.winners || []).indexOf(ME) >= 0) confetti(140);
         if (st.phase === 'ended' && lastPhase !== 'ended') confetti(220);
         if (st.round !== (lastState && lastState.round)) { voted = false; guessed = false; }
+        /* 🧊 Écran gelé : c'est MOI qui suis visé, et le gel n'a pas encore été
+           déclenché sur ce titre → on pose le givre. Le canvas vit hors de #app,
+           donc il survit aux rendus successifs. Il tombe tout seul dès qu'on a
+           assez frotté (ou au changement de manche). */
+        var giv = st.contre;
+        if (giv && giv.ice && giv.targetId === ME && iceRound !== st.round) {
+          iceRound = st.round;
+          showIce(giv.by, function () { renderPlayer(); });
+        }
+        if ((!giv || !giv.ice || giv.targetId !== ME) && iceVisible()) hideIce();
+        if (st.round !== iceRound && iceVisible()) hideIce();
         lastPhase = st.phase;
         lastState = st;
         renderPlayer();
@@ -3384,7 +3587,7 @@
       if (joinTries >= 3 && !joinLate) { joinLate = true; renderPlayer(); }
     }, 2500);
 
-    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); clearInterval(joinTimer); } };
+    current = { destroy: function () { try { chan.sendIntent({ action: 'leave', id: ME }); } catch (e) {} chan.close(); clearInterval(raceTick); clearInterval(joinTimer); hideIce(); } };
 
     function me() { return lastState && lastState.players ? lastState.players[ME] : null; }
 
@@ -3566,11 +3769,25 @@
         else {
           /* Qui a déjà renoncé : chacun voit s'il reste quelqu'un, ou s'il est le
              dernier à décider — sinon on attend sans savoir quoi. */
-          var passesP = (s.tried || []).map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
-          var bandeauP = passesP.length
-            ? '<p class="mt-4 text-neon-gold text-sm font-bold">🤷 ' + esc(passesP.join(', ')) + ' ' + (passesP.length > 1 ? 'passent' : 'passe') + ' ce titre</p>'
-            : '';
-          if ((s.tried || []).indexOf(ME) >= 0)
+          var passesP = (s.tried || []).filter(function (id) { return !(s.contre && s.contre.targetId === id); })
+            .map(function (id) { return s.players[id] ? s.players[id].name : null; }).filter(Boolean);
+          var bandeauP = (s.contre
+              ? '<p class="mt-4 text-rose-300 text-sm font-bold">' + (s.contre.ice ? '🧊 ' : '🚫 ') + esc(s.contre.by)
+                + (s.contre.ice ? ' a gelé ' : ' a contré ') + esc(s.contre.target) + '</p>'
+              : '')
+            + (passesP.length
+              ? '<p class="mt-3 text-neon-gold text-sm font-bold">🤷 ' + esc(passesP.join(', ')) + ' ' + (passesP.length > 1 ? 'passent' : 'passe') + ' ce titre</p>'
+              : '');
+          if (s.contre && s.contre.targetId === ME && s.contre.ice)
+            // Gelé : on PEUT encore jouer, une fois l'écran dégagé — on ne l'élimine pas.
+            center = (iceVisible()
+              ? buzzButton(true, '🧊', 'Écran gelé par ' + s.contre.by + ' — frotte pour te dégager')
+              : buzzButton(false, 'BUZZ', 'Dégelé ! Rattrape-les 🔥')
+                + '<button id="pass" class="mt-4 mx-auto block px-5 py-2.5 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je ne sais pas</button>')
+              + bandeauP;
+          else if (s.contre && s.contre.targetId === ME)
+            center = buzzButton(true, '🚫', 'Contré par ' + s.contre.by + ' — tu ne joues pas ce titre') + bandeauP;
+          else if ((s.tried || []).indexOf(ME) >= 0)
             center = buzzButton(true, '⏳', 'Tu as déjà tenté — au tour des autres') + bandeauP;
           else
             center = buzzButton(false, 'BUZZ', 'Appuie vite !') + bandeauP
@@ -3600,6 +3817,12 @@
       } else if (s.phase === 'voting') {
         if (isBuzzer) {
           center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">⏳</div><p class="text-xl font-bold">En attente du vote…</p></div>';
+        } else if ((s.tried || []).indexOf(ME) >= 0) {
+          // Déjà tenté (et raté) sur ce titre : on ne vote pas, donc pas de +2 à
+          // récupérer juste après avoir perdu 2 points.
+          center = '<div class="text-center animate-slidein"><div class="text-5xl mb-3">🙈</div>'
+            + '<p class="text-xl font-bold">Tu as déjà joué ce titre</p>'
+            + '<p class="text-white/50 mt-1">Tu ne votes pas sur cette manche — pas de points à reprendre.</p></div>';
         } else {
           center = [
             '<div class="w-full text-center animate-slidein">',
@@ -3686,10 +3909,27 @@
           if (!playing) return '';
           var used = (s.jok || {})[ME];
           if (used) return '  <div class="text-center mb-2 text-sm font-bold ' + (used === 'x2' ? 'text-neon-gold' : 'text-neon-cyan') + '">' + (used === 'x2' ? '🃏 Joker ×2 activé !' : '🛡️ Bouclier activé') + '</div>';
+          /* 🚫 Contre : offensif, donc des conditions strictes et LISIBLES —
+             seulement avant qu'on buzze, seulement si un meneur existe et que ce
+             n'est pas moi, et un seul contre par manche pour toute la table. */
+          var meneurP = (function () {
+            var arr = Object.keys(s.players).map(function (k) { return s.players[k]; });
+            if (arr.length < 2) return null;
+            arr.sort(function (a, b) { return b.score - a.score; });
+            return (arr[0].score === arr[1].score) ? null : arr[0];
+          })();
+          var contreOk = !s.contre && !s.buzzer && (s.phase === 'armed' || s.phase === 'buzzing')
+                         && meneurP && meneurP.id !== ME && (s.tried || []).indexOf(meneurP.id) < 0
+                         && (mine.jct || 0) > 0;
           return '  <div class="grid grid-cols-2 gap-2 mb-2">'
             + '<button id="jokX2" class="py-2.5 rounded-xl text-sm font-bold ' + (mine.jx2 > 0 ? 'bg-neon-gold text-black' : 'bg-white/10 text-white/30 pointer-events-none') + '">🃏 ×2 <span class="text-xs">(' + (mine.jx2 || 0) + ')</span></button>'
             + '<button id="jokSh" class="py-2.5 rounded-xl text-sm font-bold ' + (mine.jsh > 0 ? 'bg-neon-cyan text-black' : 'bg-white/10 text-white/30 pointer-events-none') + '">🛡️ Bouclier <span class="text-xs">(' + (mine.jsh || 0) + ')</span></button>'
-            + '</div>';
+            + '</div>'
+            + (contreOk
+                ? '  <button id="jokContre" class="w-full py-2.5 rounded-xl text-sm font-extrabold bg-rose-500 text-white mb-2">🚫 Contrer ' + esc(meneurP.name) + ' <span class="text-xs opacity-80">(' + mine.jct + ')</span></button>'
+                : ((mine.jct || 0) > 0 && !s.contre
+                    ? '  <p class="text-white/30 text-xs text-center mb-2">🚫 Contre (' + mine.jct + ') — utilisable avant le premier buzz, contre le meneur</p>'
+                    : ''));
         })(),
         '  <div class="glass rounded-2xl p-4">' + renderLeaderboard(lb, s._present || {}, ME, fairArgP) + (fairArgP ? '<p class="text-white/45 text-xs mt-2 text-center">⚖️ Scores ajustés : chacun n\'a pas été DJ le même nombre de fois</p>' : '') + '</div>',
         '  <button id="leave" class="mt-3 text-white/40 text-sm">Quitter</button>',
@@ -3701,6 +3941,7 @@
       bind('#gear', openSettings);
       bind('#jokX2', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'x2' }); beep(920, 0.1, 'sine'); vibrate(50); toast('Joker ×2 activé 🃏', 'ok'); });
       bind('#jokSh', function () { chan.sendIntent({ action: 'joker', id: ME, kind: 'sh' }); beep(700, 0.1, 'sine'); vibrate(50); toast('Bouclier activé 🛡️', 'ok'); });
+      bind('#jokContre', function () { chan.sendIntent({ action: 'contre', id: ME }); beep(160, 0.2, 'sawtooth'); vibrate(60); });
       // Contrôles du DJ de la série (depuis son propre téléphone)
       // Le DJ choisit son morceau depuis son téléphone (reste caché jusqu'au verdict)
       bind('#djPickTrack', function () {
@@ -4349,10 +4590,11 @@
         '<b>Combo</b> : 2 bonnes réponses d\'affilée = <b class="text-neon-gold">+1</b>, 3 d\'affilée = <b class="text-neon-gold">+2</b>, 4 et + = <b class="text-neon-gold">+3</b>. Une erreur remet la série à zéro.<br>'
         + '<b>🃏 Joker ×2</b> : double tes points sur la manche.<br>'
         + '<b>🛡️ Bouclier</b> : annule le malus si tu te trompes.<br>'
-        + '<span class="text-white/50 text-xs">1 de chaque par partie, à activer <b>avant</b> de connaître le résultat. En Turbo, le combo vaut +5/+10/+15.</span>'),
+        + '<b class="text-rose-300">🧊 Contre</b> : vise <b>le meneur</b>. Selon le réglage, son <b>écran se couvre de givre</b> (il doit le frotter au doigt pour revenir — il perd des secondes) ou il est <b>barré</b> sur le titre. À jouer <b>avant le premier buzz</b>, seulement si tu ne mènes pas, et <b>un seul par manche</b> pour toute la table.<br>'
+        + '<span class="text-white/50 text-xs">1 de chaque par partie, à activer <b>avant</b> de connaître le résultat. On en regagne : 3 bonnes réponses d\'affilée, ou en étant distancé. En Turbo, le combo vaut +5/+10/+15.</span>'),
       sec('🤷 Je ne sais pas',
-        'En mode Turbo, un bouton <b>« Je passe »</b> permet de ne pas bloquer la manche.<br>'
-        + 'En Classique, il suffit de <b>ne pas buzzer</b>.'),
+        'Pendant le buzz, <b>« Je ne sais pas »</b> te retire du titre en cours. Quand tout le monde a renoncé, l\'app <b>révèle la réponse</b> et on passe au suivant.<br>'
+        + '<span class="text-white/50 text-xs">Attention : une fois que tu as tenté (ou passé), tu ne votes plus sur ce titre — donc pas de <b>+2</b> à récupérer juste après une mauvaise réponse.</span>'),
       sec('🔋 Ça chauffe / ça rame ?',
         'Active <b>Économie de batterie</b> dans les réglages : ça coupe les animations lourdes.<br>'
         + 'Pense aussi à <b>installer l\'app</b> (plein écran, plus stable).'),

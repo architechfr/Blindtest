@@ -1500,10 +1500,14 @@
       '      <div class="text-xs opacity-80">Chacun passe DJ à son tour et fait deviner 3 titres. Quand tout le monde est passé, une dernière manche où <b>personne ne connaît la réponse</b>.</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="aveugle">',
       '      <div class="font-extrabold">🕶️ Tous à l\'aveugle</div>',
-      '      <div class="text-xs opacity-80">Personne n\'anime : l\'app envoie les morceaux et corrige toute seule. <b>Tout le monde joue</b>, 10 manches. Le plus simple pour démarrer.</div></button>',
-      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="duel">',
-      '      <div class="font-extrabold">⚔️ Duel à deux</div>',
-      '      <div class="text-xs opacity-80">Le même moteur que « Tous à l\'aveugle », mais <b>au buzz</b> : le premier qui appuie répond. Parfait à deux. (C\'est un raccourci — le même réglage existe dans « Comment on répond ».)</div></button>',
+      '      <div class="text-xs opacity-80">Personne n\'anime : l\'app envoie les morceaux et corrige toute seule. <b>Tout le monde joue</b>, 10 manches. Le plus simple pour démarrer — et le seul qui marche vraiment <b>à deux</b> (choisis « 🔔 Au buzz » juste en dessous pour un vrai duel).</div></button>',
+      /* « ⚔️ Duel à deux » a été RETIRÉ : il ne différait de « Mode Dingo » que par
+         un seul interrupteur (le handicap) et masquait exactement les mêmes
+         sections. Surtout, son nom promettait un format à deux joueurs qu'il ne
+         vérifiait ni n'imposait — aucune logique de l'app ne regarde le nombre de
+         joueurs. Jouer à deux se règle en un clic depuis « Tous à l'aveugle » :
+         choisir 🔔 Au buzz. Le salon prévient désormais quand une configuration
+         ne laisse qu'un seul joueur en lice (voir soloDeFait). */
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="anim">',
       '      <div class="font-extrabold">🔊 Animateur unique</div>',
       '      <div class="text-xs opacity-80">Tu restes aux commandes : tu envoies les morceaux et tu dis qui a bon. Les autres jouent.</div></button>',
@@ -1898,7 +1902,6 @@
       var STYLES = {
         tournoi:  function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '3'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); libre(); syncDjUI(1); },
         aveugle:  function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); manches(10); syncDjUI(0); },
-        duel:     function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); manches(10); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
         anim:     function () { press('#suDingo', 0); press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); libre(); syncDjUI(0); },
         surprise: function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suWheel', 1); libre(); syncDjUI(1); },
         /* Ce départ rapide met l'app aux commandes (elle choisit, joue et corrige) :
@@ -1937,10 +1940,10 @@
          promettre un réglage qui ne s'applique pas :
          · Tournoi / Surprise : « Partie à l'aveugle » (le style inverse existe) ;
            en Surprise, le « mode de départ » aussi (la roue l'écrase à chaque manche).
-         · Tous à l'aveugle / Duel : l'app choisit, joue et corrige → la source du
+         · Tous à l'aveugle / Dingo : l'app choisit, joue et corrige → la source du
            son, le mode de départ, la roue, la finale, la fin de partie (le nombre
            de manches est déjà dans le bloc aveugle) et le temps de vote (personne
-           ne vote, l'app corrige) n'ont plus de prise. Duel : pas d'équipes à deux.
+           ne vote, l'app corrige) n'ont plus de prise.
          · Animateur unique : « Je joue aussi » (le style EST « l'hôte ne joue
            pas »), la partie à l'aveugle (contradiction : personne n'anime) et la
            finale à l'aveugle (elle suppose une rotation de DJ). */
@@ -1951,7 +1954,6 @@
         // style — on garde la config (playlists, manches) mais pas le bouton qui
         // permettrait de l'éteindre en le contredisant.
         aveugle:  ['suBlind', 'secAudio', 'secMode', 'voteSecsBox'],
-        duel:     ['suBlind', 'secAudio', 'secMode', 'voteSecsBox', 'secTeams'],
         anim:     ['suHostPlays', 'secBlind'],
         // Dingo : comme l'aveugle, plus les équipes (le handicap est individuel).
         dingo:    ['suBlind', 'secAudio', 'secMode', 'voteSecsBox', 'secTeams']
@@ -2707,7 +2709,7 @@
       state.tacTotal = Math.max(3, Math.min(7, Object.keys(state.players).length + 1));
       state.tacLeft = state.tacTotal;
       nivelle();
-      state.mode = 'classic';                 // au buzz : le duel se joue de vitesse
+      state.mode = 'classic';                 // au buzz : ca se joue a la vitesse
       state.wheel = 0; state.challenge = null; state.mult = 1;
       confetti(200); beep(880, 0.35, 'sine');
       toast('⚡ TAC O TAC — écarts écrasés, tout le monde peut gagner', 'ok');
@@ -2988,7 +2990,7 @@
         publish();
       }
     }
-    /* L'hôte renonce comme n'importe quel joueur (il joue aussi, en duel notamment). */
+    /* L'hôte renonce comme n'importe quel joueur (il joue aussi, a l'aveugle notamment). */
     function hostPass() {
       if (state.phase !== 'buzzing' || state.buzzer || !canBuzz(ME)) return;
       ensurePlayer(ME, state.hostName);
@@ -3694,6 +3696,15 @@
           (s.djRotate && nb ? '  <p class="mt-4 text-sm text-neon-cyan font-bold">🎧 Premier DJ : ' + esc((rotationArr()[0] || {}).name || '') + '</p>'
             + '  <p class="text-white/55 text-sm mt-1">' + tournoiTexte(tournoiPlan(s)) + '</p>'
             + '  <p class="text-white/35 text-xs">Le total se réajuste si quelqu\'un rejoint.</p>' : ''),
+          // Configuration qui ne laisse qu'un joueur en lice : on le dit, avec la sortie.
+          (function () {
+            var sd = soloDeFait(s); if (!sd) return '';
+            return '  <div class="mt-5 rounded-2xl p-3 text-left" style="background:rgba(244,63,94,.14);border:1px solid rgba(244,63,94,.5)">'
+              + '<p class="font-extrabold text-sm">⚠️ Un seul joueur peut marquer</p>'
+              + '<p class="text-white/70 text-xs mt-1">' + sd.raison + '</p>'
+              + '<button id="fixSolo" class="mt-3 w-full py-3 rounded-xl font-extrabold bg-neon-cyan text-black active:animate-pop">🕶️ Passer à l\'aveugle — tout le monde joue</button>'
+              + '<p class="text-white/40 text-xs mt-2">L\'app choisit les morceaux, les joue et corrige seule : personne ne connaît la réponse, donc tout le monde peut jouer.</p></div>';
+          })(),
           '  <button id="launch" class="mt-6 w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-lime to-neon-cyan text-black active:animate-pop ' + (nb ? '' : 'opacity-50 pointer-events-none') + '">Lancer la manche ' + (s.round + 1) + ' ' + modeIcon + '</button>',
           '</div>'
         ].join('');
@@ -4088,6 +4099,21 @@
           }
           launchRound();
         };
+        /* Correction proposée par l'avertissement « un seul joueur en lice ».
+           On pose TOUT ce que le mode aveugle implique (même exigence que les
+           préréglages : un style qui n'éteint pas ce qu'il ne veut pas laisse
+           des réglages contradictoires actifs en silence). */
+        bind('#fixSolo', function () {
+          state.blind = 1;
+          state.mode = 'classic';        // au buzz : à deux, c'est le duel
+          state.djRotate = 0;
+          state.dj = null;
+          state.finalN = 0;              // sans rotation, il n'y a pas de fin de tour
+          state.audioMode = 'device';    // c'est l'app qui joue
+          syncBlindAudio();
+          publish();
+          toast('🕶️ Partie à l\'aveugle — tout le monde joue', 'ok');
+        });
       }
       bind('#forceVote', function () { if (s.buzzOpenAt) s.buzzMs = Date.now() - s.buzzOpenAt; s.phase = (s.mode === 'fredonne') ? 'judging' : 'voting'; s.answer = null; s.voteAt = Date.now(); publish(); });
       /* Ceinture ET bretelles : les boutons de verdict ne sont plus affichés quand
@@ -4974,9 +5000,17 @@
      taire — c'est là que le jeu devient intéressant. Un malus découvert
      après coup serait vécu comme un bug, pas comme une règle.
      --------------------------------------------------------------- */
+  /* ⚠️ Le palier 🧊 ne doit JAMAIS rendre 0. Avec un gain nul, le meneur ne peut
+     plus creuser l'écart, et les autres — à ×1,5 et ×2 avec malus réduit — ne
+     peuvent que se rapprocher : 🧊 devient un plafond et le palier 🤪 au-dessus
+     est INATTEIGNABLE. Mesuré avant correctif sur 3 000 parties de 20 manches :
+     0,0 % à 2 et 3 joueurs, 0,1 % à 5 — alors que « une bonne réponse te coûte »
+     est la promesse écrite sur le bouton du mode. Avec ×0,25, le meneur avance
+     encore d'un cheveu et peut donc atteindre le palier du dessus (21 % / 12 % /
+     3 % des parties à 2 / 3 / 5 joueurs). */
   var DINGO_PALIERS = [
     { min:   3, k:  -1, m: 1,  icon: '🤪', lbl: 'Trop d\'avance : une bonne réponse te COÛTE des points' },
-    { min:   2, k:   0, m: 1,  icon: '🧊', lbl: 'Tu mènes trop : plus rien à gagner sur ce titre' },
+    { min:   2, k: .25, m: 1,  icon: '🧊', lbl: 'Tu mènes trop : les points sont divisés par 4' },
     { min:   1, k:  .5, m: 1,  icon: '🪫', lbl: 'En tête : demi-points' },
     { min:  -1, k:   1, m: 1,  icon: '🎵', lbl: 'Dans la moyenne : points normaux' },
     { min:  -2, k: 1.5, m: .5, icon: '🔥', lbl: 'Distancé : points ×1,5 et malus réduit de moitié' },
@@ -4987,21 +5021,56 @@
     if (!s.players || !s.players[id]) return null;
     var arr = Object.keys(s.players).map(function (k) { return s.players[k]; });
     if (arr.length < 2) return null;            // seul, l'écart n'a aucun sens
-    var tot = 0; arr.forEach(function (p) { tot += p.score; });
     // Le barème Turbo est sur 100, pas sur 5 : l'unité d'écart suit le mode.
     var unite = (s.mode === 'turbo') ? 80 : (Math.abs((s.config && s.config.pointsBuzz) || 5) || 5);
-    var avance = (s.players[id].score - tot / arr.length) / unite;
+    /* Écart au PELOTON (moyenne des AUTRES), et non à la moyenne générale.
+       L'écart à la moyenne générale ne vaut que (n−1)/n de l'écart réel : à deux
+       joueurs il en valait donc la MOITIÉ, et tous les seuils étaient doublés —
+       il fallait 6 titres d'avance pour déclencher 🤪 à deux contre 4 à cinq. Le
+       mode était mécaniquement deux fois plus mou à deux. Mesuré sur les autres,
+       le seuil est le même quel que soit le nombre de joueurs : 3 titres. */
+    var autres = 0; arr.forEach(function (p) { if (p.id !== id) autres += p.score; });
+    var avance = (s.players[id].score - autres / (arr.length - 1)) / unite;
     for (var i = 0; i < DINGO_PALIERS.length; i++) {
       var p = DINGO_PALIERS[i];
       if (avance >= p.min) return { k: p.k, m: p.m, icon: p.icon, lbl: p.lbl, unite: unite, avance: avance };
     }
     return null;
   }
+  /* ---------------------------------------------------------------
+     UN SEUL JOUEUR EN LICE ? — le DJ de la manche est exclu du buzz
+     (eligibleBuzzers : « le DJ connaît la réponse »). À deux joueurs avec une
+     rotation, il ne reste donc qu'UN joueur par manche : ce n'est plus un duel,
+     c'est un solo en alternance où celui qui joue marque à tous les coups.
+     On ne bascule PAS tout seul : le nombre de joueurs est inconnu au moment où
+     l'hôte règle sa partie (personne n'a encore rejoint), et il change dès qu'un
+     retardataire arrive. Basculer serait écraser en silence un réglage visible —
+     le pire bug de ce projet, rencontré quatre fois. On prévient, et on propose
+     la correction en un bouton.
+     --------------------------------------------------------------- */
+  function soloDeFait(s) {
+    if (!s || s.blind) return null;          // à l'aveugle, tout le monde joue
+    var nb = Object.keys(s.players || {}).length;
+    if (!nb) return null;                     // salon vide : rien à dire encore
+    var enLice = s.djRotate ? nb - 1 : nb;    // le DJ de la manche ne marque pas
+    if (enLice > 1) return null;
+    return {
+      nb: nb,
+      /* Le cas « personne d'autre n'est arrivé » se lit d'abord : à un joueur,
+         parler de rotation de DJ décrirait une situation qui n'existe pas. */
+      raison: nb < 2
+        ? 'Il n\'y a qu\'un joueur dans le salon — attends quelqu\'un, ou passe à l\'aveugle pour jouer toi aussi.'
+        : 'À ' + nb + ' joueurs avec une rotation de DJ, celui qui n\'est pas DJ joue <b>tout seul</b> à chaque manche : aucune opposition, aucun buzz à gagner.'
+    };
+  }
+
   /* Bandeau affiché à chacun : « voilà ce que ce titre te rapporte, à toi ». */
   function dingoBadge(s, id) {
     var n = dingoNiveau(s, id);
     if (!n || s.phase === 'ended' || s.phase === 'lobby') return '';
-    var col = n.k <= 0 ? 'rgba(244,63,94,.6)' : (n.k > 1 ? 'rgba(163,230,53,.6)' : 'rgba(255,255,255,.28)');
+    // k < 1 = bridé (rouge), k > 1 = boosté (vert). Tester k <= 0 laissait le
+    // palier 🧊 en blanc « neutre » depuis qu'il rend 0,25 au lieu de 0.
+    var col = n.k < 1 ? 'rgba(244,63,94,.6)' : (n.k > 1 ? 'rgba(163,230,53,.6)' : 'rgba(255,255,255,.28)');
     return '  <div class="text-center mt-2 mb-1 animate-slidein"><div class="inline-block px-4 py-1.5 rounded-2xl" style="background:rgba(0,0,0,.35);border:1px solid ' + col + '">'
       + '<span class="font-extrabold">🤪 DINGO ' + n.icon + '</span>'
       + '<div class="text-white/65 text-xs">' + n.lbl + '</div></div></div>';

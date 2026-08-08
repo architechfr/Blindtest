@@ -53,12 +53,15 @@ déconnexions.
 ## 3. Modes et fonctionnalités
 
 ### Départs rapides (préréglages, en haut du menu de création)
-> **Ce ne sont PAS des modes fermés — ce sont 6 points dans un espace à 3 axes :**
+> **Ce ne sont PAS des modes fermés — ce sont 5 points dans un espace à 3 axes :**
 > *qui envoie la musique* (l'app · un animateur fixe · les joueurs à tour de rôle) ×
 > *comment on répond* (au buzz · tous en même temps · deviner l'année) ×
 > *règles en plus* (roue, handicap Dingo, bonus).
-> « Duel à deux » = « Tous à l'aveugle » avec l'interrupteur **au buzz** : le même
-> moteur, un réglage de différence. Ne pas les présenter comme des jeux distincts.
+> **« ⚔️ Duel à deux » a été retiré (2026-08-08)** : il ne différait de « Mode Dingo »
+> que par **un seul interrupteur** (le handicap) et masquait exactement les mêmes
+> sections. Surtout, son nom promettait un format à deux joueurs qu'il ne vérifiait
+> pas — il n'existe **aucune** logique liée au nombre de joueurs dans l'app. Jouer à
+> deux se règle en un clic : « Tous à l'aveugle » + 🔔 Au buzz.
 > Tout ce qui peut se combiner **doit** pouvoir se combiner : le handicap Dingo est un
 > interrupteur (`#suDingo`, utilisable jusqu'en tournoi de DJ), la roue fonctionne à
 > l'aveugle, et la fin de partie (dont « 1ᵉʳ à X pts ») y est de nouveau réglable.
@@ -67,7 +70,6 @@ déconnexions.
 |---|---|
 | 🎧 **Tournoi des DJ** | Rotation : chacun est DJ pour 3/5/10 titres, puis manches à l'aveugle |
 | 🕶️ **Tous à l'aveugle** | Aucun DJ, l'app choisit/joue/corrige, N manches |
-| ⚔️ **Duel à deux** | Aveugle + buzz + réponse « titre OU artiste » |
 | 🔊 **Animateur unique** | L'hôte anime et valide, il ne joue pas |
 | 🎡 **Soirée surprise** | Rotation + roue des défis |
 | 🤪 **Mode Dingo** | Aveugle + buzz, **handicap permanent** selon l'écart, puis **⚡ tac o tac** obligatoire |
@@ -82,7 +84,6 @@ les joueurs veulent démarrer sans lire.
 |---|---|
 | 🎧 Tournoi | Partie à l'aveugle (le style inverse existe déjà) |
 | 🕶️ Tous à l'aveugle | Source du son, mode de départ, roue, finale, fin de partie, temps de vote — l'app choisit, joue et corrige seule |
-| ⚔️ Duel | Idem + équipes (on est deux) |
 | 🔊 Animateur unique | « Je joue aussi » (le style **est** « l'hôte ne joue pas »), partie à l'aveugle, finale à l'aveugle |
 | 🎡 Soirée surprise | Partie à l'aveugle + mode de départ (la roue l'écrase à chaque manche) |
 | 🤪 Mode Dingo | Comme « Tous à l'aveugle » + équipes (le handicap est **individuel**) |
@@ -144,18 +145,37 @@ Hans Zimmer s'appelle « The Classics »).
   les trois chaînes ternaires étaient recopiées à quatre endroits.
 
 ### 🤪 Mode Dingo (`state.dingo`) — équilibrage forcé
-Un style à part : **l'avance se paie**. Le coefficient dépend de l'écart à la
-**moyenne**, mesuré en « titres » (1 titre = `pointsBuzz`, ou 80 en Turbo) —
-`dingoNiveau(s, id)`, table `DINGO_PALIERS` :
+Un style à part : **l'avance se paie**. Le coefficient dépend de l'écart au
+**peloton** (la moyenne des AUTRES), mesuré en « titres » (1 titre = `pointsBuzz`,
+ou 80 en Turbo) — `dingoNiveau(s, id)`, table `DINGO_PALIERS` :
 
 | Avance (en titres) | Gains | Malus | Libellé |
 |---|---|---|---|
 | ≥ +3 | **une bonne réponse coûte 1 titre** | ×1 | 🤪 Trop d'avance |
-| ≥ +2 | ×0 | ×1 | 🧊 Plus rien à gagner |
+| ≥ +2 | ×0,25 | ×1 | 🧊 Points divisés par 4 |
 | ≥ +1 | ×0,5 | ×1 | 🪫 Demi-points |
 | −1 → +1 | ×1 | ×1 | 🎵 Normal |
 | ≥ −2 | ×1,5 | ×0,5 | 🔥 Distancé |
 | < −2 | ×2 | **×0** | 🚀 Largué : l'erreur est gratuite |
+
+**Deux corrections mesurées (2026-08-08)** — la table était calibrée au jugé et le
+mode ne faisait pas ce que son bouton promet :
+
+1. **Écart au peloton, pas à la moyenne générale.** L'écart à la moyenne de *tous*
+   ne vaut que (n−1)/n de l'écart réel : à deux joueurs il en valait la **moitié**,
+   donc tous les seuils étaient doublés (🤪 exigeait 6 titres d'avance à deux contre
+   4 à cinq — le mode était deux fois plus mou à deux). Mesuré sur les autres, le
+   seuil est **3 titres quel que soit le nombre de joueurs**.
+2. **Le palier 🧊 ne doit jamais rendre 0.** Avec un gain nul, le meneur ne peut plus
+   creuser et les autres — boostés — ne peuvent que se rapprocher : 🧊 devenait un
+   **plafond** rendant 🤪 inatteignable. Mesuré sur 3 000 parties de 20 manches :
+   **0,0 %** à 2 et 3 joueurs, 0,1 % à 5. Autrement dit « une bonne réponse te
+   COÛTE des points », la promesse écrite sur le bouton, ne s'exécutait **jamais**.
+   Avec ×0,25 : 20 % (2 j.), 13 % (3 j.), 6 % (5 j.) des parties l'atteignent.
+
+> ⚠️ Les deux corrections sont **indissociables** : l'une sans l'autre laisse 🤪 sous
+> 4 % partout. Toute retouche de la table doit être re-simulée
+> (`scratchpad/dingo-paliers-v3.js` compare les variantes).
 
 Points de vigilance :
 - Le handicap s'applique **en dernier**, après combo et joker : appliqué avant, un
@@ -459,6 +479,29 @@ Points d'implémentation :
    trancher) côté joueur : **si personne à table ne peut répondre, la question est un
    bug**, pas une difficulté.
 
+35. **Un préréglage qui ne diffère d'un autre que par un interrupteur n'est pas un
+   mode — et un nom qui promet un format doit le contrôler.** « ⚔️ Duel à deux » ne
+   se distinguait de « 🤪 Mode Dingo » que par `press('#suDingo', …)`, masquait les
+   mêmes sections, et son nom annonçait un format à deux joueurs alors qu'**aucune**
+   ligne de l'app ne regarde le nombre de joueurs. Chercher les styles dont le diff
+   tient en une ligne : ce sont des cases à cocher déguisées.
+36. **Un palier qui rend 0 est un plafond : il rend inatteignable tout ce qui est
+   au-dessus.** Le palier 🧊 (gain ×0) empêchait le meneur de creuser, donc le palier
+   🤪 juste au-dessus ne se déclenchait jamais — 0,0 % sur 3 000 parties simulées,
+   alors que c'est la promesse écrite sur le bouton du mode. **Une table de paliers
+   se vérifie par simulation, pas à l'œil** : chaque palier doit être atteignable
+   depuis celui d'en dessous.
+37. **Une mesure relative à la moyenne dépend du nombre de joueurs.** L'écart à la
+   moyenne générale vaut (n−1)/n de l'écart réel : à deux, la moitié. Un seuil
+   calibré à cinq joueurs était donc deux fois trop mou à deux, sans que rien ne le
+   signale. Mesurer par rapport aux **autres** rend le seuil indépendant de l'effectif.
+38. **Ne jamais faire basculer un réglage tout seul sur une donnée inconnue au moment
+   du réglage.** « À deux, passe en aveugle » semble évident — mais le nombre de
+   joueurs n'existe pas quand l'hôte configure (personne n'a rejoint) et il change
+   dès qu'un retardataire arrive. Basculer, c'est écraser en silence un choix
+   visible. On **prévient** dans le salon (`soloDeFait`) et on propose la correction
+   en un bouton : visible, réversible, et insensible aux arrivées tardives.
+
 ---
 
 ## 5. Méthode de vérification (sans navigateur)
@@ -517,9 +560,17 @@ ce qui annule silencieusement l'action testée).
   mais ça ne remplace pas la soirée réelle : la plupart des bugs sérieux ont été
   trouvés par l'utilisateur en conditions réelles. **Les retours terrain restent la
   meilleure source de bugs.**
-- **Mode Dingo : réglage des paliers non validé en soirée.** La table `DINGO_PALIERS`
-  a été calibrée au jugé (seuils à 1/2/3 titres d'écart). À confirmer en conditions
-  réelles : est-ce que « une bonne réponse coûte des points » frustre ou amuse ?
+- **Mode Dingo : paliers corrigés par simulation, jamais joués en vrai.** La table
+  était calibrée au jugé ; elle l'est désormais sur 3 000 parties simulées (écart au
+  peloton + 🧊 à ×0,25, voir §3). Mais la simulation modélise le niveau des joueurs
+  et leur envie de buzzer, pas une soirée. **Deux questions ouvertes** : est-ce que
+  « une bonne réponse coûte des points » amuse ou frustre quand ça tombe pour de
+  vrai ? Et 🤪 se déclenche dans ~20 % des parties à deux contre ~6 % à cinq —
+  faut-il resserrer, ou est-ce normal qu'un duel serré soit plus explosif ?
+- **Le contre à deux joueurs n'a pas été retouché.** 🚫 Barré sec retire le seul
+  adversaire de la manche : le contreur répond seul et marque à coup sûr. Et
+  `leaderId()` renvoie `null` à égalité, fréquente à deux — le contre est alors
+  indisponible. À arbitrer : interdire `block` à deux, ou l'assumer.
 - **Mode solo : le frottement n'est pas en cause, mais l'autoplay si.** `dzPlay` part
   d'un callback asynchrone (après la recherche du morceau) : sur navigateur strict,
   la lecture peut être refusée. Le bouton « ⏯️ Réécouter depuis le début » sert de

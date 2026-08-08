@@ -103,6 +103,46 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
 > code interne (`state.source`, `mode === 'fredonne'`) reste en place mais **inerte** :
 > l'arracher aurait touché les chemins de buzz et de verdict tout juste corrigés.
 
+### 🎬 Thèmes « à œuvre » — le thème pose la question
+`PLAYLISTS` connaît deux formes. Les playlists classiques listent des **artistes**.
+**Disney**, **Musiques de films** et **Génériques TV** (nouveau) listent des
+**œuvres** (`oeuvres`, `ask: 'oeuvre'`, `label`, `motBo`) : ce ne sont pas des
+artistes, ce sont des films.
+
+**Pourquoi** — chercher `q=Le Roi Lion` comme un artiste cherchait dans *tous* les
+champs. Mesuré sur l'API réelle avant correctif : `Pocahontas` → PLK, `Coco` → Ninho,
+`Cendrillon` → Téléphone, `La Belle et la Bête` → Indochine, `Titanic` → Leto, et
+`Le Roi Lion` / `La Petite Sirène` / `Le Livre de la Jungle` → des **livres audio**
+(« Chapitre 01 : … L'histoire du film Disney »). La playlist Disney ne jouait
+quasiment **aucune** chanson Disney. Et même quand le morceau était bon, on demandait
+« l'artiste » — soit *Cast of Cinderella*, que personne ne peut donner.
+
+**Comment** — `oeuvreSearch()` interroge `album:"<œuvre>" <motBo>` puis, à défaut, la
+requête large ; `oeuvreConvient()` exige que l'album **ou le titre** cite l'œuvre
+**et** porte un marqueur de bande originale (`OEU_MARQ`), et rejette les livres audio
+(`OEU_LIVRE`). Mesuré : 7/16 films trouvés avant, **15/16** après ; listes retenues
+= 31 Disney, 46 films, 27 séries, toutes vérifiées avec ≥ 2 extraits jouables.
+
+**La clé** : comme on cherche **par** œuvre, on la **connaît** — `roundTrack.oeuvre`
+est posé à la source. Aucune déduction à partir du nom d'album (fragile : une compil
+Hans Zimmer s'appelle « The Classics »).
+
+- La question de la manche est `state.ask` / `state.askLabel`, calculée par
+  **`syncAsk()`** — appelée dans `launchRound` **et** dans `prefetchAuto` quand le
+  morceau arrive après le lancement (sinon les joueurs voient « Titre + Artiste » sur
+  une bande originale).
+- `modeReponse()` fait passer l'œuvre **avant tout**, y compris le contre 🎯 Exigence :
+  demander titre + artiste sur une BO française est une question sans réponse.
+  Un défi « titre seul » de la roue, lui, reste jouable et n'est pas écrasé.
+- `fuzzyHit(…, 'oeuvre')` accepte **toutes les variantes** déclarées (`'Back to the
+  Future|Retour vers le futur'`, séparateur `|`, la première sert à la recherche) et
+  rend **`half`** si on donne le titre de la chanson au lieu du film.
+- Les sources sont encodées en chaînes `oeu:<playlist>:<œuvre>` : la mémoire des
+  artistes déjà passés est persistée en JSON, des objets n'y survivraient pas — et le
+  tirage sans remise (`nextArtist`) continue de fonctionner sans modification.
+- **`ansUI(am, label)`** est la seule source des libellés (badge / consigne / champ) :
+  les trois chaînes ternaires étaient recopiées à quatre endroits.
+
 ### 🤪 Mode Dingo (`state.dingo`) — équilibrage forcé
 Un style à part : **l'avance se paie**. Le coefficient dépend de l'écart à la
 **moyenne**, mesuré en « titres » (1 titre = `pointsBuzz`, ou 80 en Turbo) —
@@ -399,6 +439,25 @@ Points d'implémentation :
    dans `applyTurbo()` — sinon un simple changement de mode l'annulait en silence.
    Même piège que l'asymétrie hôte/joueur : une règle écrite à un seul endroit ne
    couvre jamais le jeu entier.
+32. **Une recherche non contrainte trouve autre chose que ce qu'on cherche — et le
+   fait en silence.** `q=Le Roi Lion` interrogeait *tous* les champs de Deezer : la
+   playlist Disney servait du rap (`Coco` → Ninho, `Pocahontas` → PLK) et des livres
+   audio. Rien ne plantait, rien n'alertait — seul un test à blanc contre l'API réelle
+   l'a montré. **Avant de coder une fonctionnalité qui repose sur une API, échantillonner
+   ce qu'elle renvoie vraiment.** Le correctif tient en deux idées : requête ciblée
+   (`album:"…"`) et **filtre de vraisemblance** sur le résultat.
+33. **Le premier filtre écrit est toujours trop laxiste.** Ma règle « l'album porte le
+   nom du film » laissait passer Ninho (album *Coco*), Téléphone (album *Cendrillon*)
+   et Leto (album *TITANIC*) : un album qui porte le nom d'un film n'est pas la musique
+   de ce film. Exiger **en plus** un marqueur de bande originale a coûté 1 point de
+   rappel (56 → 55 sur 60) et supprimé l'essentiel des faux positifs. **Sur un filtre
+   automatique, préférer la précision au rappel : un titre manquant se remplace, un
+   titre hors sujet casse la manche.**
+34. **Une question doit toujours avoir une réponse que quelqu'un peut donner.** Même
+   avec le bon morceau Disney, demander « l'artiste » revenait à demander *Cast of
+   Cinderella*. C'est le pendant de la leçon n°23 (à l'aveugle, l'app doit pouvoir
+   trancher) côté joueur : **si personne à table ne peut répondre, la question est un
+   bug**, pas une difficulté.
 
 ---
 

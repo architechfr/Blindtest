@@ -420,7 +420,8 @@
             id: t.trackId,
             title: t.trackName,
             artist: { name: t.artistName },
-            album: { cover_small: (t.artworkUrl60 || t.artworkUrl100 || ''), cover_medium: (t.artworkUrl100 || '').replace('100x100', '300x300') },
+            // title : c'est là que se trouve le nom du film pour les thèmes « à œuvre ».
+            album: { title: t.collectionName || '', cover_small: (t.artworkUrl60 || t.artworkUrl100 || ''), cover_medium: (t.artworkUrl100 || '').replace('100x100', '300x300') },
             preview: t.previewUrl,
             year: parseInt(String(t.releaseDate || '').slice(0, 4), 10) || null
           };
@@ -456,13 +457,85 @@
     { id: 'p00', icon: '📱', name: 'Années 2000', artists: ['Coldplay', 'Eminem', 'Rihanna', 'Beyoncé', 'Linkin Park', 'The Killers', 'Amy Winehouse', 'Kylie Minogue', 'Black Eyed Peas', 'Diam\'s', 'Kyo', 'Superbus', 'Corneille', 'Justin Timberlake', 'Shakira', 'Green Day', 'Outkast', 'Gorillaz'] },
     { id: 'pfr', icon: '🇫🇷', name: 'Variété FR', artists: ['Johnny Hallyday', 'Michel Sardou', 'Céline Dion', 'Francis Cabrel', 'Patrick Bruel', 'Michel Berger', 'Véronique Sanson', 'Alain Souchon', 'Renaud', 'Jean-Jacques Goldman', 'Julien Clerc', 'Zaz', 'Louane', 'Vianney', 'Christophe Maé', 'Calogero', 'Florent Pagny', 'Serge Gainsbourg'] },
     { id: 'prap', icon: '🎤', name: 'Rap FR', artists: ['IAM', 'NTM', 'MC Solaar', 'Booba', 'Orelsan', 'Nekfeu', 'PNL', 'Damso', 'Bigflo & Oli', 'Soprano', 'Sexion d\'Assaut', 'Sniper', 'Rohff', 'Lomepal', 'Jul', 'Ninho', 'Gims', 'Dadju'] },
-    { id: 'pdis', icon: '🏰', name: 'Disney', artists: ['Le Roi Lion', 'La Reine des Neiges', 'Aladdin', 'La Belle et la Bête', 'Pocahontas', 'Mulan', 'Le Livre de la Jungle', 'La Petite Sirène', 'Toy Story', 'Vaiana', 'Raiponce', 'Coco', 'Hercule', 'Tarzan'] },
+    /* Disney / Films / Séries sont des playlists « à ŒUVRE » : la liste ne contient
+       pas des artistes mais des FILMS. Chercher « Coco » comme un artiste renvoyait
+       Ninho, « Cendrillon » Téléphone et « Le Roi Lion » un livre audio — voir
+       oeuvreSearch(). Et comme on cherche PAR film, on connaît le film : la réponse
+       attendue (`ask: 'oeuvre'`) est fiable sans jamais avoir à la deviner. */
+    { id: 'pdis', icon: '🏰', name: 'Disney', ask: 'oeuvre', label: 'Le dessin animé', motBo: 'bande originale', oeuvres: ['Le Roi Lion', 'La Reine des Neiges', 'Aladdin', 'La Belle et la Bête', 'Pocahontas', 'Mulan', 'Le Livre de la Jungle', 'La Petite Sirène', 'Toy Story', 'Vaiana|Moana', 'Raiponce', 'Coco', 'Hercule', 'Tarzan', 'Cendrillon', 'Les Aristochats', 'Le Bossu de Notre-Dame', 'Blanche Neige', 'Dumbo', 'Bambi', 'La Belle au Bois Dormant', 'Rebelle', 'Là-haut', 'Ratatouille', 'Cars', 'Encanto', 'Zootopie', 'Brother Bear|Frère des ours', 'Soul', 'Luca', 'Wish'] },
     { id: 'prock', icon: '🎸', name: 'Rock', artists: ['AC/DC', 'Queen', 'Led Zeppelin', 'The Rolling Stones', 'Nirvana', 'Metallica', 'Guns N\' Roses', 'The Beatles', 'Pink Floyd', 'Muse', 'Foo Fighters', 'Arctic Monkeys', 'The White Stripes', 'Noir Désir', 'Téléphone'] },
     { id: 'pete', icon: '☀️', name: 'Tubes de l\'été', artists: ['Shakira', 'Luis Fonsi', 'Ricky Martin', 'Gipsy Kings', 'Manu Chao', 'Magic System', 'Kaoma', 'Lou Bega', 'Las Ketchup', 'Daddy Yankee', 'Bob Sinclar', 'Stromae', 'Dua Lipa', 'Ed Sheeran'] },
-    { id: 'pfilm', icon: '🎬', name: 'Musiques de films', artists: ['Hans Zimmer', 'John Williams', 'Ennio Morricone', 'Titanic soundtrack', 'Dirty Dancing', 'Grease', 'Pulp Fiction soundtrack', 'James Bond theme', 'Rocky soundtrack', 'Ghostbusters', 'Flashdance', 'Footloose'] },
+    { id: 'pfilm', icon: '🎬', name: 'Musiques de films', ask: 'oeuvre', label: 'Le film', motBo: 'bande originale', oeuvres: ['Titanic', 'Dirty Dancing', 'Grease', 'Pulp Fiction', 'Rocky', 'Ghostbusters|SOS Fantômes', 'Flashdance', 'Footloose', 'Star Wars|La Guerre des étoiles', 'Gladiator', 'Interstellar', 'La La Land', 'Bodyguard', 'Top Gun', 'Les Bronzés', 'Le Grand Bleu', 'Amélie Poulain|Le Fabuleux Destin d\'Amélie Poulain|Amélie', 'Les Choristes', 'Intouchables', 'Indiana Jones', 'Le Cinquième Élément', 'Taxi', 'Back to the Future|Retour vers le futur', 'The Godfather|Le Parrain', 'Forrest Gump', 'Jurassic Park', 'Harry Potter', 'Matrix', 'Trainspotting', 'Reservoir Dogs', 'Armageddon', 'Mission Impossible', 'La Boum', 'Les Visiteurs', 'Astérix', 'Le Dîner de Cons', 'Moulin Rouge', 'Mamma Mia', 'The Greatest Showman', 'Rocketman', 'Bohemian Rhapsody', 'Shrek', 'Batman', 'Spider-Man', 'Avengers', 'Léon'] },
+    { id: 'ptv', icon: '📺', name: 'Génériques TV', ask: 'oeuvre', label: 'La série', motBo: 'generique serie television', oeuvres: ['Game of Thrones', 'Twin Peaks', 'X-Files', 'Mission Impossible', 'Peaky Blinders', 'Stranger Things', 'La Casa de Papel', 'The Simpsons|Les Simpson', 'Doctor Who|Docteur Who', 'Starsky et Hutch', 'MacGyver', 'Magnum', 'Urgences', 'Dr House', 'Sherlock', 'Westworld', 'The Crown', 'Narcos', 'Breaking Bad', 'The Walking Dead', 'Kaamelott', 'Plus belle la vie', 'Goldorak', 'Nicky Larson', 'Dragon Ball', 'Pokémon', 'Sailor Moon'] },
     { id: 'pdance', icon: '🎉', name: 'Dancefloor', artists: ['David Guetta', 'Daft Punk', 'Calvin Harris', 'Avicii', 'Martin Solveig', 'Bob Sinclar', 'Justice', 'The Weeknd', 'Dua Lipa', 'Bruno Mars', 'Lady Gaga', 'Robin Schulz', 'Kungs', 'Ofenbach'] }
   ];
   function playlistById(id) { for (var i = 0; i < PLAYLISTS.length; i++) if (PLAYLISTS[i].id === id) return PLAYLISTS[i]; return null; }
+
+  /* ---------------------------------------------------------------
+     PLAYLISTS « À ŒUVRE » (film / série / dessin animé)
+     Le thème ne dit pas seulement QUOI jouer, il dit aussi CE QU'ON DEMANDE.
+     Sur une musique de film, la bonne question n'est pas « quel artiste ? »
+     (personne ne connaît l'interprète d'une chanson Disney française) mais
+     « quel film ? ». Comme on cherche PAR film, on le connaît déjà : aucune
+     déduction fragile à partir du nom d'album.
+     --------------------------------------------------------------- */
+  /* Une entrée peut porter des variantes séparées par « | » : la PREMIÈRE sert à
+     la recherche et à l'affichage, TOUTES sont acceptées en réponse — « Retour
+     vers le futur » et « Back to the Future » sont le même film. */
+  function oeuvreNoms(entree) { return String(entree || '').split('|').map(function (s) { return s.trim(); }).filter(Boolean); }
+  function oeuvreNom(entree) { return oeuvreNoms(entree)[0] || ''; }
+  function plOeuvre(pl) { return !!(pl && pl.oeuvres && pl.oeuvres.length); }
+  /* Les sources tirables d'une playlist, sous forme de chaînes (la mémoire des
+     artistes déjà passés est persistée en JSON : des objets n'y survivraient pas). */
+  function plSources(pl) {
+    if (!pl) return [];
+    if (!plOeuvre(pl)) return pl.artists || [];
+    return pl.oeuvres.map(function (o) { return 'oeu:' + pl.id + ':' + o; });
+  }
+  /* Decode une source « oeu:<playlist>:<oeuvre> ». Prefixe lisible plutot qu un
+     caractere de controle : ces chaines finissent dans le stockage local et dans
+     un fichier HTML, ou l invisible se paie tot ou tard. */
+  function decOeuvre(src) {
+    if (typeof src !== 'string' || src.indexOf('oeu:') !== 0) return null;
+    var i = src.indexOf(':', 4); if (i < 0) return null;
+    var pl = playlistById(src.slice(4, i));
+    return pl ? { pl: pl, entree: src.slice(i + 1) } : null;
+  }
+
+  /* Normalisation qui GARDE les parenthèses, contrairement à norm() : c'est
+     justement dans « (Bande Originale Française du Film) » que se trouve la
+     preuve qu'on tient la bonne musique. */
+  function onorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  /* Un livre audio n'est pas une chanson. « Chapitre 01 : Le roi lion
+     (L'histoire du film Disney) » sortait en tête sur la moitié des titres Disney. */
+  var OEU_LIVRE = /(chapitre|histoire du film|histoire du court|raconte par|livre audio|conte musical|lu par)/;
+  /* Marqueur de bande originale, cherché dans l'album ET dans le titre (les titres
+     Disney français portent « De "Raiponce"/Bande Originale Française du Film »).
+     Il est OBLIGATOIRE : sans lui « Coco » renvoie Ninho, « Cendrillon » Téléphone
+     et « Titanic » un morceau de Leto. Un album qui porte le nom du film n'est pas
+     la musique du film. */
+  var OEU_MARQ = /(bande originale|original motion picture|music from|from the motion picture|soundtrack|original score|generique|musique du film|musique originale|netflix series|television series|tv series|serie televisee|original series)/;
+  function oeuvreConvient(t, nom) {
+    var alb = onorm(t && t.album && t.album.title), tit = onorm(t && t.title), o = onorm(nom);
+    if (!o) return false;
+    if (OEU_LIVRE.test(alb) || OEU_LIVRE.test(tit)) return false;
+    if (alb.indexOf(o) < 0 && tit.indexOf(o) < 0) return false;   // parle bien de CETTE œuvre
+    return OEU_MARQ.test(alb) || OEU_MARQ.test(tit);
+  }
+  /* Recherche ciblée : « album:"Aladdin" bande originale » d'abord (Deezer sait
+     restreindre à l'album), la requête large ensuite. Mesuré sur l'API réelle :
+     la requête brute ne trouvait le bon film que 7 fois sur 16, celle-ci 15/16. */
+  function oeuvreSearch(entree, pl, cb, limit) {
+    var nom = oeuvreNom(entree), mot = (pl && pl.motBo) || 'bande originale';
+    var qs = ['album:"' + nom + '" ' + mot, nom + ' ' + mot], i = 0;
+    (function suivante() {
+      if (i >= qs.length) { cb([]); return; }
+      musicSearch(qs[i++], function (res) {
+        var bons = (res || []).filter(function (t) { return t.preview && oeuvreConvient(t, nom); });
+        if (bons.length) cb(bons); else suivante();
+      }, limit);
+    })();
+  }
 
   /* ---------------------------------------------------------------
      FILTRES COMBINABLES — chaque artiste est étiqueté par décennie(s),
@@ -727,16 +800,26 @@
      déjà entendu qu'une manche bloquée faute de nouveauté. */
   function autoPick(pl, usedIds, cb, tries) {
     tries = tries || 0;
-    if (!pl || !pl.artists || !pl.artists.length || tries > 4) { cb(null); return; }
+    /* On accepte aussi bien une playlist du catalogue (qui peut être « à œuvre »)
+       qu'une liste de sources déjà construite par l'appelant ({artists: […]}). */
+    var srcs = (pl && pl.artists && pl.artists.length) ? pl.artists : plSources(pl);
+    if (!srcs.length || tries > 4) { cb(null); return; }
     var dernier = tries === 4;
-    var artist = nextArtist(pl.artists);
-    musicSearch(artist, function (res) {
+    var src = nextArtist(srcs);
+    var oeu = decOeuvre(src);   // source « à œuvre » (film / série) ou simple artiste
+    var recu = function (res) {
       if (!res || !res.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
       var pool = res.filter(function (t) { return t.preview && usedIds.indexOf(t.id) < 0; });
       if (!pool.length && dernier) pool = res.filter(function (t) { return t.preview; });
       if (!pool.length) { autoPick(pl, usedIds, cb, tries + 1); return; }
-      cb(pool[(Math.random() * pool.length) | 0]);
-    }, AUTO_LIMIT);
+      var t = pool[(Math.random() * pool.length) | 0];
+      /* On a cherché PAR œuvre : on sait donc de quel film il s'agit, sans avoir
+         à le déduire du nom d'album. C'est ce qui rend la question fiable. */
+      if (oeu) { t._oeuvre = oeu.entree; t._oeuLabel = oeu.pl.label || 'L\'œuvre'; }
+      cb(t);
+    };
+    if (oeu) oeuvreSearch(oeu.entree, oeu.pl, recu, AUTO_LIMIT);
+    else musicSearch(src, recu, AUTO_LIMIT);
   }
 
   var dzAudio = document.getElementById('dzaudio');
@@ -899,10 +982,34 @@
     }
 
     var mt = match(title), ma = match(artist);
+    /* Thème « à œuvre » (film, série, dessin animé) : on demande le NOM DE L'ŒUVRE.
+       Toutes les variantes déclarées sont acceptées (« Retour vers le futur » et
+       « Back to the Future »). Donner le titre de la chanson à la place n'est pas
+       faux — c'est à moitié bon : on reconnaît l'effort sans donner tout le point. */
+    if (mode === 'oeuvre') {
+      var noms = oeuvreNoms(track.oeuvre);
+      for (var i = 0; i < noms.length; i++) if (match(clean(noms[i]))) return 'ok';
+      return mt ? 'half' : 'ko';
+    }
     if (mode === 'title') return mt ? 'ok' : 'ko';
     if (mode === 'artist') return ma ? 'ok' : 'ko';
     if (mode === 'either') return (mt || ma) ? 'ok' : 'ko';       // l'un des deux suffit
     return (mt && ma) ? 'ok' : ((mt || ma) ? 'half' : 'ko');      // both : les deux attendus
+  }
+
+  /* UNE seule description de ce qu'on demande. Le badge, la consigne et le champ
+     de saisie étaient trois chaînes ternaires recopiées à quatre endroits : elles
+     ont fini par diverger (leçon n°13 — une règle, une fonction).
+     `deux` = deux champs séparés (titre + artiste). */
+  function ansUI(am, label) {
+    if (am === 'oeuvre') {
+      var l = label || 'L\'œuvre';
+      return { badge: '🎬 ' + l, consigne: 'Donne ' + l.charAt(0).toLowerCase() + l.slice(1), ph: '🎬 ' + l + '…', deux: false };
+    }
+    if (am === 'both') return { badge: '🎵 Titre + Artiste', consigne: 'Titre ET artiste', ph: '', deux: true };
+    if (am === 'either') return { badge: '🎲 Titre OU Artiste', consigne: 'Titre OU artiste (au choix)', ph: '🎲 Titre ou artiste…', deux: false };
+    if (am === 'artist') return { badge: '🎤 Artiste', consigne: 'Nomme l\'artiste', ph: '🎤 Artiste…', deux: false };
+    return { badge: '💿 Titre', consigne: 'Donne le titre', ph: '💿 Titre…', deux: false };
   }
 
   /* --------------------------------------------------------------------------
@@ -1548,7 +1655,10 @@
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="title">💿 Titre seul</button>',
       '    <button type="button" class="suAns py-3 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-ans="artist">🎤 Artiste seul</button>',
       '  </div>',
-      '  <p class="text-white/40 text-xs mb-5"><b>Titre + Artiste</b> : les deux sont demandés (2 cases, moitié des points si une seule bonne). <b>Titre OU Artiste</b> : l\'un des deux suffit pour marquer.</p>',
+      '  <p class="text-white/40 text-xs mb-2"><b>Titre + Artiste</b> : les deux sont demandés (2 cases, moitié des points si une seule bonne). <b>Titre OU Artiste</b> : l\'un des deux suffit pour marquer.</p>',
+      /* Un réglage affiché doit être celui qui s'appliquera vraiment (leçon n°26) :
+         sur une musique de film, c'est le thème qui pose la question, pas ce bouton. */
+      '  <p class="text-white/45 text-xs mb-5">🎬 Sur les thèmes <b>Disney</b>, <b>Musiques de films</b> et <b>Génériques TV</b>, ce réglage est ignoré : on demande <b>le film ou la série</b> — personne ne connaît l\'interprète d\'une bande originale. Donner le titre de la chanson vaut la moitié des points.</p>',
       '  </div>',
 
       '  <div id="voteSecsBox" class="flex items-center gap-2 mb-5 text-sm text-white/60"><span>⏱️ Temps de vote des autres joueurs :</span><input id="voteSecs" type="number" min="0" max="60" value="10" class="w-14 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /><span>s</span></div>',
@@ -1959,6 +2069,9 @@
       st.pls = arr.filter(function (id) { return !!playlistById(id); });
       if (!st.pls.length) st.pls = ['p80'];
     })();
+    /* Sur un thème « à œuvre » (film / série), la question du morceau l'emporte sur
+       le réglage : demander l'artiste d'une bande originale n'a pas de réponse. */
+    function soloAns() { return (st.track && st.track.oeuvre) ? 'oeuvre' : st.ans; }
     var loading = false, tick = null;
     /* Le solo joue TOUJOURS le son lui-même. Sans ces deux lignes, un réglage
        « source à part » laissé par une soirée précédente rendait l'entraînement
@@ -1972,7 +2085,7 @@
       var seen = {}, out = [];
       st.pls.forEach(function (id) {
         var p = playlistById(id); if (!p) return;
-        p.artists.forEach(function (a) { if (!seen[a]) { seen[a] = 1; out.push(a); } });
+        plSources(p).forEach(function (a) { if (!seen[a]) { seen[a] = 1; out.push(a); } });
       });
       return out;
     }
@@ -1987,7 +2100,7 @@
         played.push(t.id);
         if (played.length > MEM_TRACKS) played.shift();
         memSave();
-        st.track = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview };
+        st.track = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, oeuvre: t._oeuvre || null, oeuLabel: t._oeuLabel || null };
         st.said = ''; st.verdict = null; st.gain = 0;
         st.at = Date.now(); st.phase = 'play';
         render();
@@ -2012,7 +2125,8 @@
     function repondre(txt) {
       if (st.phase !== 'play' || !st.track) return;
       var sec = Math.max(0, (Date.now() - st.at) / 1000);
-      var v = txt ? fuzzyHit(txt, st.track, st.ans) : 'ko';
+      // Même règle qu'en partie : sur une musique de film, on demande le film.
+      var v = txt ? fuzzyHit(txt, st.track, soloAns()) : 'ko';
       // Vite = plus de points, mais une bonne réponse rapporte toujours au moins 3.
       var base = Math.max(3, SOLO_MAX - Math.floor(sec / 2.5));
       st.said = txt || '';
@@ -2063,7 +2177,8 @@
           '  <p class="text-4xl font-extrabold text-neon-cyan"><span id="soChrono">0</span><span class="text-lg">s</span></p>',
           '  <button id="soReplay" class="mt-3 px-4 py-2 rounded-xl glass font-bold text-sm">⏯️ Réécouter depuis le début</button>',
           '</div>',
-          '<input id="soAnsw" maxlength="120" autocomplete="off" placeholder="' + (st.ans === 'artist' ? '🎤 Artiste…' : st.ans === 'title' ? '💿 Titre…' : st.ans === 'both' ? '💿 Titre + 🎤 artiste…' : '🎲 Titre ou artiste…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />',
+          (soloAns() === 'oeuvre' ? '<div class="text-center mb-2"><span class="inline-block px-3 py-1 rounded-full bg-neon-gold/25 ring-1 ring-neon-gold text-sm font-bold">' + ansUI('oeuvre', st.track.oeuLabel).badge + '</span></div>' : ''),
+          '<input id="soAnsw" maxlength="120" autocomplete="off" placeholder="' + (soloAns() === 'oeuvre' ? ansUI('oeuvre', st.track.oeuLabel).ph : st.ans === 'artist' ? '🎤 Artiste…' : st.ans === 'title' ? '💿 Titre…' : st.ans === 'both' ? '💿 Titre + 🎤 artiste…' : '🎲 Titre ou artiste…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />',
           '<button id="soSend" class="w-full py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-2">Valider</button>',
           '<button id="soSkip" class="w-full py-3 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je passe · montre-moi la réponse</button>'
         ].join('');
@@ -2077,6 +2192,7 @@
           '  <div class="text-6xl mb-1">' + ico + '</div>',
           '  <p class="text-2xl font-extrabold ' + col + '">' + lbl + (st.gain ? ' +' + st.gain : '') + '</p>',
           (st.said ? '  <p class="text-white/45 text-sm mt-1">Tu as écrit : « ' + esc(st.said) + ' »</p>' : ''),
+          (st.track.oeuvre ? '  <div class="mt-3"><span class="inline-block px-4 py-1.5 rounded-2xl bg-neon-gold/25 ring-1 ring-neon-gold font-extrabold">🎬 ' + esc(oeuvreNom(st.track.oeuvre)) + '</span></div>' : ''),
           '  <div class="glass rounded-2xl p-4 mt-4 flex items-center gap-3 text-left">',
           (st.track.cover ? '    <img src="' + esc(st.track.cover) + '" alt="" class="w-16 h-16 rounded-lg" />' : ''),
           '    <div class="min-w-0"><div class="font-extrabold truncate">' + esc(st.track.title) + '</div><div class="text-white/55 text-sm truncate">' + esc(st.track.artist) + '</div></div>',
@@ -2162,6 +2278,9 @@
     return {
       code: code, hostName: hostName, partyName: partyName, config: cfg,
       round: 0, phase: 'lobby', theme: '', mode: 'classic', teams: 0, answerMode: 'both',
+      /* Question de la manche en cours, imposée par le thème (film / série) :
+         null = on s'en tient à answerMode. Recalculée par syncAsk(). */
+      ask: null, askLabel: null,
       source: null, _srcIdx: -1, fredEvery: 10, fredCount: 0, year: null, guesses: {},
       reveal: null, suggest: null,
       buzzer: null, answer: null, votes: {}, result: null, buzzAt: 0,
@@ -2211,7 +2330,7 @@
       var seen = {}, out = [];
       autoPls.forEach(function (id) {
         var p = playlistById(id); if (!p) return;
-        p.artists.forEach(function (a) { if (!seen[a]) { seen[a] = 1; out.push(a); } });
+        plSources(p).forEach(function (a) { if (!seen[a]) { seen[a] = 1; out.push(a); } });
       });
       return out.length ? out : null;
     }
@@ -2267,11 +2386,18 @@
         playedIds.push(t.id); playedNow++;
         if (playedIds.length > MEM_TRACKS) playedIds.shift();
         memSave();
-        roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, auto: true };
+        // oeuvre : porté par le morceau lui-même, car c'est LUI qui décide de la
+        // question posée sur cette manche (voir modeReponse / ansUI).
+        roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, auto: true, oeuvre: t._oeuvre || null, oeuLabel: t._oeuLabel || null };
         fillYear(t, roundTrack, renderHost);
-        // Le morceau arrive après coup : si la manche est déjà lancée, on le joue.
-        if (state.phase === 'buzzing' || state.phase === 'racing' || state.phase === 'year_guess') dzPlay(roundTrack.preview);
-        renderHost();
+        /* Le morceau arrive après coup : si la manche est déjà lancée, on le joue.
+           Et comme c'est LUI qui porte la question (film / série), il faut la
+           recalculer et la diffuser — sinon les joueurs voient « Titre + Artiste »
+           sur une bande originale dont personne ne connaît l'interprète. */
+        var enCours = state.phase === 'buzzing' || state.phase === 'racing' || state.phase === 'year_guess';
+        if (enCours) dzPlay(roundTrack.preview);
+        var avant = state.ask; syncAsk();
+        if (enCours && state.ask !== avant) publish(); else renderHost();
         if (attenteMorceau) { attenteMorceau = false; launchRound(); }  // la manche attendait ce morceau
       });
     }
@@ -2722,6 +2848,8 @@
         else pl.played = (pl.played || 0) + 1;
       });
 
+      syncAsk();   // le thème peut changer la question posée (film / série / dessin animé)
+
       if (state.mode === 'year') { state.phase = 'year_guess'; if (roundTrack && roundTrack.preview) dzPlay(roundTrack.preview); publish(); return; }
       if (state.mode === 'turbo') {
         // Tout le monde répond en même temps : le chrono démarre pour tous.
@@ -2780,11 +2908,26 @@
       return null;
     }
     /* Ce que CE joueur doit trouver sur ce titre : l'« exigence » lui demande les
-       deux quand les autres n'ont qu'une des deux à donner. */
+       deux quand les autres n'ont qu'une des deux à donner.
+       Sur une manche « à œuvre » (film / série / dessin animé), la question du
+       thème l'emporte sur TOUT le reste, exigence comprise : demander l'artiste
+       d'une chanson Disney française, c'est poser une question sans réponse. */
     function modeReponse(id) {
+      if (state.ask === 'oeuvre') return 'oeuvre';
       var c = state.contre;
       if (c && c.eff === 'exig' && c.targetId === id) return 'both';
       return state.answerMode;
+    }
+    /* La question posée par la manche en cours. Le morceau la porte (il vient d'un
+       thème « à œuvre »), donc on la recalcule à chaque fois qu'il change — y
+       compris quand la recherche le livre APRÈS le lancement de la manche.
+       Un défi « titre seul » reste jouable tel quel : on ne l'écrase pas. */
+    function syncAsk() {
+      var oeu = roundTrack && roundTrack.oeuvre;
+      if (oeu && state.answerMode !== 'title') {
+        state.ask = 'oeuvre';
+        state.askLabel = roundTrack.oeuLabel || 'L\'œuvre';
+      } else { state.ask = null; state.askLabel = null; }
     }
     /* Le meneur au moment présent — cible du 🚫 Contre. En cas d'égalité en tête,
        personne ne mène : on ne barre pas quelqu'un au hasard. */
@@ -2801,7 +2944,7 @@
     function noOneKnows() {
       dzPause();
       state.buzzer = null; state.answer = null; state.votes = {}; state.suggest = null;
-      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year, oeuvre: roundTrack.oeuvre || null, oeuLabel: roundTrack.oeuLabel || null }; roundTrack = null; }
       state.result = { correct: false, gain: 0, none: true, streak: 0 };
       state.phase = 'reveal';
       state.history.push({ round: state.round, none: true });
@@ -2888,7 +3031,7 @@
       if (roundTrack && roundTrack.year && state.guesses[ME] != null) yr = roundTrack.year;
       if (isNaN(yr)) { toast('Entre une année (ou choisis un morceau Deezer)', 'err'); return; }
       dzPause();
-      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year, oeuvre: roundTrack.oeuvre || null, oeuLabel: roundTrack.oeuLabel || null }; roundTrack = null; }
       state.year = yr;
       var best = Infinity;
       Object.keys(state.guesses).forEach(function (id) { var d = Math.abs(state.guesses[id] - yr); if (d < best) best = d; });
@@ -3040,7 +3183,7 @@
         state.tried = (state.tried || []).concat([state.buzzer.id]);
       }
       var canRebound = !correct && eligibleBuzzers().length > 0;
-      if (roundTrack && !canRebound) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      if (roundTrack && !canRebound) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year, oeuvre: roundTrack.oeuvre || null, oeuLabel: roundTrack.oeuLabel || null }; roundTrack = null; }
       state.phase = 'reveal';
       state.history.push({
         round: state.round, buzzer: state.buzzer, answer: state.answer,
@@ -3143,7 +3286,7 @@
       });
       grantBonuses();
       state.turboScores = res;
-      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
+      if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year, oeuvre: roundTrack.oeuvre || null, oeuLabel: roundTrack.oeuLabel || null }; roundTrack = null; }
       state.phase = 'turbo_reveal';
       state.history.push({ round: state.round, turbo: res });
       confetti(180); beep(880, 0.3, 'sine');
@@ -3221,7 +3364,7 @@
           b.onclick = function () {
             var t = lastResults[+b.getAttribute('data-i')]; if (!t) return;
             dzPause();
-            roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
+            roundTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, oeuvre: t._oeuvre || null, oeuLabel: t._oeuLabel || null };
             fillYear(t, roundTrack, renderHost);
             closePicker(); toast('Morceau prêt 🔒', 'ok'); renderHost();
           };
@@ -3613,7 +3756,7 @@
             '<div class="glass rounded-2xl p-6 text-center animate-slidein">',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
             '  <p class="text-white/60 mb-3">Écris ta réponse</p>',
-            '  <input id="hostAns" maxlength="120" placeholder="Titre / artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3 text-center text-lg outline-none focus:ring-2 ring-neon-pink mb-3" />',
+            '  <input id="hostAns" maxlength="120" placeholder="' + (s.ask === 'oeuvre' ? esc(ansUI('oeuvre', s.askLabel).ph) : 'Titre / artiste…') + '" class="w-full bg-black/40 rounded-xl px-4 py-3 text-center text-lg outline-none focus:ring-2 ring-neon-pink mb-3" />',
             '  <button id="hostSend" class="w-full py-3 rounded-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider ma réponse</button>',
             '  <button id="hostOral" class="mt-2 text-white/40 text-sm">Je réponds à l\'oral</button>',
             '</div>'
@@ -3657,7 +3800,9 @@
               '    <button id="ok" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>',
               '    <button id="ko" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button>',
               '  </div>',
-              ((s.answerMode || 'both') === 'both'
+              /* « À moitié » vaut aussi sur une manche à œuvre : donner le titre de la
+                 chanson au lieu du film n'est pas faux, ça vaut la moitié. */
+              ((s.answerMode || 'both') === 'both' || s.ask === 'oeuvre'
                 ? '  <button id="half" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop ' + (canDecide ? '' : 'opacity-40 pointer-events-none') + '">≈ À moitié (+' + Math.ceil(s.config.pointsBuzz / 2) + ')</button>'
                 : ''),
               (canDecide ? '' : '  <button id="skipWait" class="mt-3 text-white/40 text-xs underline">Trancher maintenant</button>')
@@ -4217,11 +4362,14 @@
       var lb = fairArgP ? leaderboardFair(s.players, fairP) : leaderboardArr(s.players);
       var rank = lb.findIndex(function (p) { return p.id === ME; }) + 1;
       var isBuzzer = s.buzzer && s.buzzer.id === ME;
-      /* both | title | artist — MON exigence à moi : le contre « 🎯 Exigence » me
-         demande les deux quand les autres n'ont qu'une des deux à trouver. L'écran
-         doit dire la vérité sur ce qu'on attend de MOI, pas la règle générale. */
-      var am = (s.contre && s.contre.eff === 'exig' && s.contre.targetId === ME)
-        ? 'both' : (s.answerMode || 'both');
+      /* œuvre | both | title | artist — MON exigence à moi : le contre « 🎯 Exigence »
+         me demande les deux quand les autres n'ont qu'une des deux à trouver. L'écran
+         doit dire la vérité sur ce qu'on attend de MOI, pas la règle générale.
+         ⚠️ Miroir exact de modeReponse() côté hôte : si l'un change, l'autre aussi,
+         sinon l'écran promet une question et la correction en juge une autre. */
+      var am = (s.ask === 'oeuvre') ? 'oeuvre'
+        : ((s.contre && s.contre.eff === 'exig' && s.contre.targetId === ME) ? 'both' : (s.answerMode || 'both'));
+      var amUI = ansUI(am, s.askLabel);
       var imDJ = s.dj && s.dj.id === ME; // je suis le DJ de la série en cours
       var isSource = s.source && s.source.id === ME;
 
@@ -4316,7 +4464,7 @@
             + '<div class="text-2xl font-extrabold my-3">' + (s.answer ? '« ' + esc(s.answer) + ' »' : '<span class="text-white/40 text-lg">(à l\'oral)</span>') + '</div>'
             + '<div class="grid grid-cols-2 gap-3"><button id="djOk" class="py-4 rounded-xl bg-neon-lime text-black font-extrabold active:animate-pop">✓ Correct</button>'
             + '<button id="djKo" class="py-4 rounded-xl bg-rose-500 font-extrabold active:animate-pop">✗ Faux</button></div>'
-            + (am === 'both' ? '<button id="djHalf" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">≈ À moitié (titre OU artiste)</button>' : '')
+            + ((amUI.deux || am === 'oeuvre') ? '<button id="djHalf" class="mt-2 w-full py-3 rounded-xl bg-neon-gold text-black font-extrabold active:animate-pop">≈ À moitié ' + (am === 'oeuvre' ? '(le titre, pas l\'œuvre)' : '(titre OU artiste)') + '</button>' : '')
             + '</div>';
         } else {
           center = '<div class="w-full animate-slidein">' + djHdr + djTrackBox
@@ -4334,11 +4482,11 @@
             '  <div id="pRaceLeft" class="bt-title text-5xl font-extrabold text-neon-gold mb-1">' + Math.max(0, Math.ceil(((s.buzzOpenAt || Date.now()) + (s.turboSecs || 30) * 1000 - Date.now()) / 1000)) + '</div>',
             '  <p class="text-white/40 text-xs mb-2">secondes — plus tu es rapide, plus tu marques</p>',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">⚡ VITE !</p>',
-            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'either' ? 'Titre OU artiste' : am === 'artist' ? 'L\'artiste' : 'Le titre') + ' — jusqu\'à 100 pts</p>',
-            (am === 'both'
+            '  <p class="text-white/60 mb-4">' + amUI.consigne + ' — jusqu\'à 100 pts</p>',
+            (amUI.deux
               ? '  <input id="raceTitle" maxlength="80" placeholder="💿 Titre…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
                 + '<input id="raceArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-3" />'
-              : '  <input id="raceOne" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : am === 'either' ? '🎲 Titre ou artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />'),
+              : '  <input id="raceOne" maxlength="120" placeholder="' + amUI.ph + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />'),
             '  <button id="raceSend" class="btn-glow w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Envoyer ⚡</button>',
             '  <button id="racePass" class="mt-3 w-full py-3 rounded-xl glass font-bold text-sm">🤷 Je ne sais pas — je passe</button>',
             '</div>'
@@ -4429,11 +4577,11 @@
           center = [
             '<div class="w-full animate-slidein text-center">',
             '  <p class="text-2xl font-extrabold text-neon-lime mb-1">À toi ! 🎉</p>',
-            '  <p class="text-white/60 mb-4">' + (am === 'both' ? 'Titre ET artiste' : am === 'either' ? 'Titre OU artiste (au choix)' : am === 'artist' ? 'Nomme l\'artiste' : 'Donne le titre') + '</p>',
-            (am === 'both'
+            '  <p class="text-white/60 mb-4">' + amUI.consigne + '</p>',
+            (amUI.deux
               ? '  <input id="ansTitle" maxlength="80" placeholder="💿 Titre…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-2" />'
                 + '<input id="ansArtist" maxlength="80" placeholder="🎤 Artiste…" class="w-full bg-black/40 rounded-xl px-4 py-3.5 text-lg text-center outline-none focus:ring-2 ring-neon-cyan mb-4" />'
-              : '  <input id="ans" maxlength="120" placeholder="' + (am === 'artist' ? '🎤 Artiste…' : am === 'either' ? '🎲 Titre ou artiste…' : '💿 Titre…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />'),
+              : '  <input id="ans" maxlength="120" placeholder="' + amUI.ph + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-4" />'),
             '  <button id="send" class="w-full py-4 rounded-xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">Valider ma réponse</button>',
             '  <button id="oral" class="mt-3 text-white/40 text-sm">Je réponds à l\'oral</button>',
             '</div>'
@@ -4538,7 +4686,7 @@
           : ''),
         (s.phase !== 'ended' && s.mode !== 'year' ? '  <div class="text-center mt-1 flex flex-wrap justify-center gap-2">'
           + (s.theme ? '<span class="inline-block px-3 py-1 rounded-full bg-neon-pink/20 ring-1 ring-neon-pink text-sm font-bold">🎯 ' + esc(s.theme) + '</span>' : '')
-          + '<span class="inline-block px-3 py-1 rounded-full bg-white/10 text-sm font-bold">' + (am === 'both' ? '🎵 Titre + Artiste' : am === 'either' ? '🎲 Titre OU Artiste' : am === 'artist' ? '🎤 Artiste' : '💿 Titre') + '</span></div>' : ''),
+          + '<span class="inline-block px-3 py-1 rounded-full ' + (am === 'oeuvre' ? 'bg-neon-gold/25 ring-1 ring-neon-gold' : 'bg-white/10') + ' text-sm font-bold">' + amUI.badge + '</span></div>' : ''),
         '  <div class="flex-1 flex flex-col items-center justify-center py-6">' + center + '</div>',
         // Jokers : utilisables une fois chacun, avant de connaître le résultat.
         (function () {
@@ -4593,7 +4741,7 @@
       // Le DJ choisit son morceau depuis son téléphone (reste caché jusqu'au verdict)
       bind('#djPickTrack', function () {
         openTrackPicker(function (t) {
-          myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
+          myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, oeuvre: t._oeuvre || null, oeuLabel: t._oeuLabel || null };
           fillYear(t, myTrack, renderPlayer);
           toast('Morceau prêt 🔒', 'ok'); renderPlayer();
         }, lastState && lastState.theme ? lastState.theme : '');
@@ -4603,7 +4751,7 @@
       bind('#plySearch', function () {
         dzPause();
         openTrackPicker(function (t) {
-          myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null };
+          myTrack = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview, year: null, oeuvre: t._oeuvre || null, oeuLabel: t._oeuLabel || null };
           fillYear(t, myTrack, renderPlayer);
           toast('Morceau prêt 🎵', 'ok'); renderPlayer();
         }, '');
@@ -4954,7 +5102,10 @@
   /* Carte « morceau révélé » (pochette + titre + artiste + année). */
   function revealCard(r) {
     if (!r) return '';
-    return '<div class="mt-4 flex items-center gap-3 justify-center"><img src="' + esc(r.cover || '') + '" class="w-14 h-14 rounded-lg object-cover" alt="" /><div class="text-left min-w-0"><div class="font-extrabold truncate">' + esc(r.title || '') + '</div><div class="text-white/50 text-sm truncate">' + esc(r.artist || '') + (r.year ? ' · ' + r.year : '') + '</div></div></div>';
+    /* Manche à œuvre : c'était LA question, elle doit donc être la réponse la plus
+       visible — un écran de verdict rappelle ce sur quoi il portait (leçon n°24). */
+    var oeu = r.oeuvre ? '<div class="mt-3 text-center"><span class="inline-block px-4 py-1.5 rounded-2xl bg-neon-gold/25 ring-1 ring-neon-gold font-extrabold">🎬 ' + esc(oeuvreNom(r.oeuvre)) + '</span></div>' : '';
+    return oeu + '<div class="mt-4 flex items-center gap-3 justify-center"><img src="' + esc(r.cover || '') + '" class="w-14 h-14 rounded-lg object-cover" alt="" /><div class="text-left min-w-0"><div class="font-extrabold truncate">' + esc(r.title || '') + '</div><div class="text-white/50 text-sm truncate">' + esc(r.artist || '') + (r.year ? ' · ' + r.year : '') + '</div></div></div>';
   }
 
   /* Podium top 3 (écran de fin). */
@@ -5271,6 +5422,9 @@
         '<b>🔊 Classique</b> — le 1<sup>er</sup> qui buzze répond.<br>'
         + '<b>⚡ Turbo</b> — tout le monde répond en même temps, jusqu\'à 100 pts selon la rapidité.<br>'
         + '<b>📅 Année</b> — devine l\'année de sortie, le plus proche gagne.'),
+      sec('🎬 Thèmes film, série et Disney',
+        'Sur <b>Disney</b>, <b>Musiques de films</b> et <b>Génériques TV</b>, la question change toute seule : on demande <b>le film ou la série</b>, pas l\'artiste.<br>'
+        + '<span class="text-white/50 text-xs">Les titres français ne sont pas exigés à la lettre et les deux noms sont acceptés (« Retour vers le futur » ou « Back to the Future »). Si tu donnes le titre de la chanson au lieu du film, tu marques la moitié des points.</span>'),
       sec('🏆 Les points (Classique / Année)',
         'Bonne réponse <b class="text-neon-lime">+5</b> · Mauvaise <b class="text-rose-400">−2</b><br>'
         + 'Bon vote <b class="text-neon-lime">+2</b> · Mauvais vote <b class="text-rose-400">−1</b><br>'

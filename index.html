@@ -1385,7 +1385,8 @@
       '    <div class="font-extrabold">🙋 Je joue aussi — <span id="suHostPlaysState">OUI</span></div>',
       '    <div class="text-xs opacity-80">Tu apparais dans le salon et tu marques des points, sauf sur les titres que tu choisis toi-même.</div></button>',
 
-      '  <p class="block text-sm text-white/60 mb-2 font-bold uppercase">🎬 Style de partie</p>',
+      '  <p class="block text-sm text-white/60 mb-1 font-bold uppercase">🎬 Départs rapides</p>',
+      '  <p class="text-white/40 text-xs mb-2">Un clic règle tout. Ce ne sont pas des jeux fermés : tu peux ensuite ajuster n\'importe quoi dans « Personnaliser » — le handicap Dingo, la roue, la fin de partie se combinent avec tous.</p>',
       '  <div class="grid grid-cols-1 gap-2 mb-2">',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="tournoi">',
       '      <div class="font-extrabold">🎧 Tournoi des DJ</div>',
@@ -1395,7 +1396,7 @@
       '      <div class="text-xs opacity-80">Personne n\'anime : l\'app envoie les morceaux et corrige toute seule. <b>Tout le monde joue</b>, 10 manches. Le plus simple pour démarrer.</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="duel">',
       '      <div class="font-extrabold">⚔️ Duel à deux</div>',
-      '      <div class="text-xs opacity-80">Tu choisis un thème, et c\'est parti : l\'app envoie les morceaux, <b>les deux peuvent buzzer</b>, elle dit tout de suite qui a bon. Rien d\'autre à régler.</div></button>',
+      '      <div class="text-xs opacity-80">Le même moteur que « Tous à l\'aveugle », mais <b>au buzz</b> : le premier qui appuie répond. Parfait à deux. (C\'est un raccourci — le même réglage existe dans « Comment on répond ».)</div></button>',
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="anim">',
       '      <div class="font-extrabold">🔊 Animateur unique</div>',
       '      <div class="text-xs opacity-80">Tu restes aux commandes : tu envoies les morceaux et tu dis qui a bon. Les autres jouent.</div></button>',
@@ -1429,7 +1430,6 @@
       '      <button type="button" class="suBlindPlay py-2.5 rounded-xl text-sm font-bold bg-black/30 text-white/70" data-play="turbo">⚡ Tous en même temps</button>',
       '    </div>',
       '    <p class="text-white/40 text-xs mt-2">Au buzz : le premier qui appuie répond, l\'app dit tout de suite si c\'est bon. Parfait à deux.</p>',
-      '    <div class="flex items-center gap-2 mt-3 text-sm text-white/60"><span>🏁 Nombre de manches :</span><input id="suBlindRounds" type="number" min="3" max="50" value="10" class="w-16 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
       '  </div>',
       '  </div>',
 
@@ -1467,6 +1467,16 @@
       '    <li><b>Mort subite</b> — points doublés, mais une erreur coûte double aussi</li>',
       '  </ul>',
       '  <p class="text-white/35 text-xs mb-5">Ça remplace le mode de jeu choisi au-dessus, manche après manche.</p>',
+      '  </div>',
+
+      /* Le handicap Dingo était attaché au NOM du style : on ne pouvait donc pas
+         l'avoir en tournoi de DJ, alors que rien ne s'y oppose. C'est une règle de
+         points, pas une famille de jeu — donc un interrupteur, comme les combos. */
+      '  <div id="secDingo">',
+      '  <button type="button" id="suDingo" class="w-full p-3 rounded-xl text-left bg-black/30 text-white/70 mb-2">',
+      '    <div class="font-extrabold">🤪 Handicap Dingo — <span id="suDingoState">OFF</span></div>',
+      '    <div class="text-xs opacity-80">L\'avance se paie : plus tu mènes, moins tu rapportes, et avec trop d\'avance une bonne réponse te <b>coûte</b> des points. Distancé, tu marques double et une erreur ne coûte rien. À la fin, <b>⚡ tac o tac</b> : les écarts sont écrasés et le dernier peut encore tout gagner.</div></button>',
+      '  <p class="text-white/40 text-xs mb-5">Se combine avec <b>n\'importe quel style</b>, y compris le tournoi de DJ.</p>',
       '  </div>',
 
       '  <div id="secBonus">',
@@ -1588,7 +1598,8 @@
 
     var setupMode = 'classic', setupTeams = 0, setupAns = 'both', setupDj = 0, setupGoal = 'none', setupAudio = 'device';
     // Plusieurs playlists peuvent être cochées : on jouera l'union de leurs artistes.
-    var setupBlind = 0, setupBlindPls = ['p80'], setupBlindRounds = 10, setupBlindFinal = 0, setupBlindPlay = 'buzz';
+    // setupBlindFinal reste à 0 : son interrupteur, inerte, a été retiré (voir plus bas).
+    var setupBlind = 0, setupBlindPls = ['p80'], setupBlindFinal = 0, setupBlindPlay = 'buzz';
     var setupHostPlays = 1, setupFinalN = 3;
     (function () {
       Array.prototype.forEach.call(document.querySelectorAll('.suFinalN'), function (b) {
@@ -1655,7 +1666,15 @@
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-neon-violet text-white');
       };
     });
-    var setupCombos = 1, setupJokers = 1, setupWheel = 0, setupContre = 'ice';
+    var setupCombos = 1, setupJokers = 1, setupWheel = 0, setupContre = 'ice', setupDingo = 0;
+    (function () {
+      var db = document.getElementById('suDingo');
+      if (db) db.onclick = function () {
+        setupDingo = setupDingo ? 0 : 1;
+        db.className = 'w-full p-3 rounded-xl text-left mb-2 ' + (setupDingo ? 'bg-gradient-to-r from-neon-pink to-neon-violet text-white' : 'bg-black/30 text-white/70');
+        var st = document.getElementById('suDingoState'); if (st) st.textContent = setupDingo ? 'ON' : 'OFF';
+      };
+    })();
     Array.prototype.forEach.call(document.querySelectorAll('.suContre'), function (b) {
       b.onclick = function () {
         setupContre = b.getAttribute('data-contre');
@@ -1737,10 +1756,6 @@
       };
     });
 
-    /* Le style retenu au moment de créer : certains modes (Dingo) ne sont pas la
-       somme de leurs réglages, ils portent une règle à eux qu'aucun interrupteur
-       ne représente. On garde donc le nom du style, pas seulement ses effets. */
-    var setupStyle = 'tournoi';
     /* Un style = un jeu de réglages prêt à l'emploi. On réutilise les boutons
        existants (clics simulés) pour que l'écran reflète bien le choix. */
     (function () {
@@ -1771,19 +1786,31 @@
          passer d'« aveugle » à « tournoi » laissait l'aveugle activé en silence —
          et une fois la section masquée, plus personne ne pouvait le voir. */
       var STYLES = {
-        tournoi:  function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '3'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(1); },
-        aveugle:  function () { press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); syncDjUI(0); },
-        duel:     function () { press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
-        anim:     function () { press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
-        surprise: function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suWheel', 1); syncDjUI(1); },
-        /* Dingo : c'est l'app qui choisit, joue ET corrige — indispensable, sinon
-           celui qui tient le morceau pourrait s'arranger avec son propre handicap. */
-        dingo:    function () { press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); }
+        tournoi:  function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '3'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); libre(); syncDjUI(1); },
+        aveugle:  function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); manches(10); syncDjUI(0); },
+        duel:     function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); manches(10); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
+        anim:     function () { press('#suDingo', 0); press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); libre(); syncDjUI(0); },
+        surprise: function () { press('#suDingo', 0); press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suWheel', 1); libre(); syncDjUI(1); },
+        /* Ce départ rapide met l'app aux commandes (elle choisit, joue et corrige) :
+           c'est la façon la plus lisible de découvrir le handicap. Mais l'interrupteur
+           « 🤪 Handicap Dingo » s'utilise avec n'importe quel style — le barème se
+           calcule sur les scores, que personne ne peut arranger. */
+        dingo:    function () { press('#suDingo', 1); press('#suHostPlays', 1); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); manches(10); choose('suAns', 'data-ans', 'either'); syncDjUI(0); }
       };
       /* Le bloc « rotation » n'a de sens que dans les styles qui font tourner le DJ.
          Ailleurs on le masque ; en tournoi on retire « moi seul » (contradictoire).
          Les « manches à l'aveugle en fin de tour » suivent la rotation : sans elle,
          il n'y a pas de « fin de tour ». */
+      /* « X manches » avec une valeur choisie : le bouton de fin de partie force 20,
+         ce qui est long pour une partie où l'app enchaîne toute seule. */
+      function manches(n) {
+        choose('suGoal', 'data-goal', 'rounds');
+        var v = document.getElementById('goalVal'); if (v) v.value = n;
+      }
+      /* Les styles à rotation se terminent d'eux-mêmes quand tous les DJ sont passés :
+         leur fin de partie doit être « Libre », sinon ils héritaient en silence de
+         l'objectif d'un style cliqué juste avant. */
+      function libre() { choose('suGoal', 'data-goal', 'none'); }
       function syncDjUI(avecRotation) {
         var box = document.getElementById('suDjBox'), tit = document.getElementById('suDjTitle');
         var off = document.querySelector('.suDj[data-dj="0"]');
@@ -1813,14 +1840,14 @@
         // suBlind (l'interrupteur seul) : dans ces deux styles, l'aveugle EST le
         // style — on garde la config (playlists, manches) mais pas le bouton qui
         // permettrait de l'éteindre en le contredisant.
-        aveugle:  ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secGoal', 'voteSecsBox'],
-        duel:     ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secGoal', 'voteSecsBox', 'secTeams'],
+        aveugle:  ['suBlind', 'secAudio', 'secMode', 'voteSecsBox'],
+        duel:     ['suBlind', 'secAudio', 'secMode', 'voteSecsBox', 'secTeams'],
         anim:     ['suHostPlays', 'secBlind'],
         // Dingo : comme l'aveugle, plus les équipes (le handicap est individuel).
-        dingo:    ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secGoal', 'voteSecsBox', 'secTeams']
+        dingo:    ['suBlind', 'secAudio', 'secMode', 'voteSecsBox', 'secTeams']
       };
       var TOUTES_SECTIONS = ['suHostPlays', 'secBlind', 'suBlind', 'secAudio', 'secMode', 'secWheel',
-                             'secBonus', 'secGoal', 'secAns', 'voteSecsBox', 'secTeams'];
+                             'secBonus', 'secDingo', 'secGoal', 'secAns', 'voteSecsBox', 'secTeams'];
       function syncSections(style) {
         var cache = CACHE_PAR_STYLE[style] || [];
         TOUTES_SECTIONS.forEach(function (id) {
@@ -1834,7 +1861,6 @@
         });
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-gradient-to-r from-neon-pink to-neon-violet text-white');
         var style = b.getAttribute('data-style');
-        setupStyle = style;
         var f = STYLES[style]; if (f) f();
         syncSections(style);
         // APRÈS syncSections : celui-ci réaffiche tout ce qu'il ne masque pas et
@@ -1872,7 +1898,7 @@
         st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.contreMode = setupContre;   // 'ice' (écran gelé) ou 'block' (barré sec)
-        st.dingo = (setupStyle === 'dingo') ? 1 : 0;
+        st.dingo = setupDingo;   // interrupteur, combinable avec tous les styles
         /* Toujours 0 : l'interrupteur qui le pilotait a été retiré (il était inerte).
            Le champ reste pour les parties enregistrées avant `finalN`, où il sert
            encore de valeur de repli dans launchRound. */
@@ -1892,10 +1918,7 @@
           st.blind = 1;
           st.mode = (setupBlindPlay === 'turbo') ? 'turbo' : 'classic'; // buzz par défaut
           st.djRotate = 0;          // aucun DJ
-          st.wheel = 0;             // pas de changement de mode surprise
           st.audioMode = 'device';  // c'est l'app qui joue
-          st.goal = 'rounds';
-          st.goalVal = Math.min(50, Math.max(3, val('#suBlindRounds', 10)));
           store.set('autoPlaylist', setupBlindPls); // playlist(s) choisie(s) pour la partie
         }
         store.set('hostGame', st);

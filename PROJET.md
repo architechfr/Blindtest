@@ -52,7 +52,17 @@ déconnexions.
 
 ## 3. Modes et fonctionnalités
 
-### Styles de partie (préréglages, en haut du menu de création)
+### Départs rapides (préréglages, en haut du menu de création)
+> **Ce ne sont PAS des modes fermés — ce sont 6 points dans un espace à 3 axes :**
+> *qui envoie la musique* (l'app · un animateur fixe · les joueurs à tour de rôle) ×
+> *comment on répond* (au buzz · tous en même temps · deviner l'année) ×
+> *règles en plus* (roue, handicap Dingo, bonus).
+> « Duel à deux » = « Tous à l'aveugle » avec l'interrupteur **au buzz** : le même
+> moteur, un réglage de différence. Ne pas les présenter comme des jeux distincts.
+> Tout ce qui peut se combiner **doit** pouvoir se combiner : le handicap Dingo est un
+> interrupteur (`#suDingo`, utilisable jusqu'en tournoi de DJ), la roue fonctionne à
+> l'aveugle, et la fin de partie (dont « 1ᵉʳ à X pts ») y est de nouveau réglable.
+
 | Style | Ce qu'il fait |
 |---|---|
 | 🎧 **Tournoi des DJ** | Rotation : chacun est DJ pour 3/5/10 titres, puis manches à l'aveugle |
@@ -374,7 +384,17 @@ Points d'implémentation :
    `validate(suggest === 'ok', suggest === 'half')` : une réponse à moitié bonne
    partait donc en `correct = false` et prenait le **malus complet**, avec un écran
    qui annonçait « Raté ! −2 (à moitié) ». Révélé par l'effet 🎯 Exigence.
-29. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
+29. **Une règle attachée au NOM d'un préréglage ferme des portes pour rien.** Le
+   handicap Dingo se lisait `setupStyle === 'dingo'` : impossible de l'avoir en
+   tournoi de DJ, alors que rien ne s'y oppose (le barème se calcule sur les scores,
+   que personne ne peut arranger). Devenu un interrupteur. Même chose pour la roue et
+   la fin de partie, éteintes d'autorité dans `if (setupBlind)`. **Un préréglage
+   choisit des valeurs ; il ne doit pas être la seule façon d'y accéder.**
+30. **Un préréglage doit fixer TOUT ce qu'il concerne, y compris ce qu'il ne veut
+   pas.** Cliquer « Dingo » puis « Tournoi » laissait le tournoi hériter en silence
+   de l'objectif « 10 manches ». Chaque style pose désormais explicitement son
+   `libre()` ou `manches(n)` — même piège que `press('#suBlind', 0)`.
+31. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
    handicap Dingo devait être posé dans `validate()` (buzz), sur les votes **et**
    dans `applyTurbo()` — sinon un simple changement de mode l'annulait en silence.
    Même piège que l'asymétrie hôte/joueur : une règle écrite à un seul endroit ne

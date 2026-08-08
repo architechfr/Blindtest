@@ -1195,6 +1195,7 @@
     var h = location.hash.slice(1);
     var m = h.match(/^join=([A-Z0-9]{6})$/i);
     if (h === 'new') return renderHostSetup();          // créer une nouvelle partie
+    if (h === 'solo') return startSolo();                // entraînement, hors ligne de jeu
     if (h === 'host') {                                  // partie hôte en cours
       var saved = store.get('hostGame', null);
       if (saved && saved.code) return startHost(saved);
@@ -1271,8 +1272,10 @@
 
       (lj ? '  <div class="w-full flex gap-2 mb-3"><button id="resumeJoin" class="btn-glow-cyan flex-1 py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-cyan to-neon-lime text-black active:animate-pop">↩︎ Revenir dans ' + esc(lj.code) + '</button><button id="dropJoin" class="px-4 rounded-2xl glass text-white/60" title="Ne plus proposer">✕</button></div>' : ''),
 
-      '  <button id="goHost" class="btn-glow w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-4">',
+      '  <button id="goHost" class="btn-glow w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-3">',
       '    🎤 Créer une partie</button>',
+      '  <button id="goSolo" class="w-full py-3.5 rounded-2xl text-base font-extrabold glass active:animate-pop mb-4">',
+      '    🎯 M\'entraîner tout seul</button>',
 
       '  <div class="glass rounded-2xl p-5 w-full">',
       '    <label class="block text-sm text-white/60 mb-2 font-bold uppercase tracking-wide">Rejoindre avec un code</label>',
@@ -1288,6 +1291,7 @@
     ].join('');
 
     $('#goHost').onclick = function () { go('new'); };
+    bind('#goSolo', function () { go('solo'); });
     bind('#installApp', function () {
       if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; return; }
       openInstallHelp();
@@ -1350,6 +1354,9 @@
       '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="surprise">',
       '      <div class="font-extrabold">🎡 Soirée surprise</div>',
       '      <div class="text-xs opacity-80">Comme le tournoi, mais <b>la règle change à chaque titre</b> : tantôt tout le monde répond en même temps, tantôt seul le titre compte, tantôt les points sont doublés…</div></button>',
+      '    <button type="button" class="suStyle p-3 rounded-xl text-left bg-black/30 text-white/70" data-style="dingo">',
+      '      <div class="font-extrabold">🤪 Mode Dingo</div>',
+      '      <div class="text-xs opacity-80"><b>L\'avance se paie.</b> Plus tu mènes, moins tu rapportes — et avec trop d\'avance, une bonne réponse te <b>coûte</b> des points. Distancé, tu marques double et une erreur ne coûte rien. À la fin, <b>⚡ tac o tac</b> : les écarts sont écrasés et le dernier peut encore tout gagner.</div></button>',
       '  </div>',
       '  <details class="mb-5">',
       '    <summary class="glass rounded-2xl px-4 py-3 text-sm font-bold text-white/70 cursor-pointer">⚙️ Personnaliser (facultatif)</summary>',
@@ -1665,6 +1672,10 @@
       };
     });
 
+    /* Le style retenu au moment de créer : certains modes (Dingo) ne sont pas la
+       somme de leurs réglages, ils portent une règle à eux qu'aucun interrupteur
+       ne représente. On garde donc le nom du style, pas seulement ses effets. */
+    var setupStyle = 'tournoi';
     /* Un style = un jeu de réglages prêt à l'emploi. On réutilise les boutons
        existants (clics simulés) pour que l'écran reflète bien le choix. */
     (function () {
@@ -1699,7 +1710,10 @@
         aveugle:  function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'turbo'); syncDjUI(0); },
         duel:     function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); },
         anim:     function () { press('#suHostPlays', 0); press('#suBlind', 0); choose('suDj', 'data-dj', '0'); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suMode', 'data-mode', 'classic'); syncDjUI(0); },
-        surprise: function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); syncDjUI(1); }
+        surprise: function () { press('#suHostPlays', 1); press('#suBlind', 0); choose('suDj', 'data-dj', '5'); press('#suBlindFinal', 1); press('#suWheel', 1); syncDjUI(1); },
+        /* Dingo : c'est l'app qui choisit, joue ET corrige — indispensable, sinon
+           celui qui tient le morceau pourrait s'arranger avec son propre handicap. */
+        dingo:    function () { press('#suHostPlays', 1); press('#suBlindFinal', 0); press('#suWheel', 0); choose('suDj', 'data-dj', '0'); press('#suBlind', 1); choose('suBlindPlay', 'data-play', 'buzz'); choose('suAns', 'data-ans', 'either'); syncDjUI(0); }
       };
       /* Le bloc « rotation » n'a de sens que dans les styles qui font tourner le DJ.
          Ailleurs on le masque ; en tournoi on retire « moi seul » (contradictoire).
@@ -1736,7 +1750,9 @@
         // permettrait de l'éteindre en le contredisant.
         aveugle:  ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox'],
         duel:     ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox', 'secTeams'],
-        anim:     ['suHostPlays', 'secBlind', 'secFinal']
+        anim:     ['suHostPlays', 'secBlind', 'secFinal'],
+        // Dingo : comme l'aveugle, plus les équipes (le handicap est individuel).
+        dingo:    ['suBlind', 'secAudio', 'secMode', 'secWheel', 'secFinal', 'secGoal', 'voteSecsBox', 'secTeams']
       };
       var TOUTES_SECTIONS = ['suHostPlays', 'secBlind', 'suBlind', 'secAudio', 'secMode', 'secWheel',
                              'secBonus', 'secFinal', 'secGoal', 'secAns', 'voteSecsBox', 'secTeams'];
@@ -1753,6 +1769,7 @@
         });
         b.className = b.className.replace('bg-black/30 text-white/70', 'bg-gradient-to-r from-neon-pink to-neon-violet text-white');
         var style = b.getAttribute('data-style');
+        setupStyle = style;
         var f = STYLES[style]; if (f) f();
         syncSections(style);
         if (!silencieux) toast('Réglages appliqués ✓', 'ok');
@@ -1787,6 +1804,7 @@
         st.turboSecs = Math.min(120, Math.max(10, val('#turboSecs', 30)));
         st.combos = setupCombos; st.jokers = setupJokers; st.wheel = setupWheel; st.audioMode = setupAudio;
         st.contreMode = setupContre;   // 'ice' (écran gelé) ou 'block' (barré sec)
+        st.dingo = (setupStyle === 'dingo') ? 1 : 0;
         st.blindFinal = setupBlindFinal;
         st.hostPlays = setupHostPlays;
         /* Manches à l'aveugle « en fin de tour » : sans rotation de DJ, il n'y a pas
@@ -1822,6 +1840,230 @@
     };
   }
 
+  /* --------------------------------------------------------------------------
+     4 bis. MODE SOLO — entraînement
+     Aucun canal temps réel, aucun joueur, aucun hôte : l'app tire un morceau,
+     le joue, corrige et compte. Sert à s'échauffer avant une soirée ou à jouer
+     seul dans le train. La mémoire musicale est PARTAGÉE avec les parties :
+     s'entraîner l'après-midi ne fera pas ressortir les mêmes titres le soir.
+     -------------------------------------------------------------------------- */
+  function startSolo() {
+    var SOLO_MAX = 12;                 // points d'une bonne réponse immédiate
+    var ANS_SOLO = [['either', '🎲 Titre ou artiste'], ['title', '💿 Titre'],
+                    ['artist', '🎤 Artiste'], ['both', '🎵 Les deux']];
+    var st = {
+      phase: 'setup',                  // setup · play · reveal · done
+      pls: [], ans: store.get('soloAns', 'either'), total: store.get('soloTotal', 10),
+      round: 0, score: 0, streak: 0, best: 0, good: 0,
+      track: null, verdict: null, gain: 0, said: '', at: 0,
+      record: false, recVal: 0, hist: []
+    };
+    (function () {
+      // On repart des playlists de la dernière fois (solo, sinon celles des parties).
+      var v = store.get('soloPls', null) || store.get('autoPlaylist', null);
+      var arr = (Object.prototype.toString.call(v) === '[object Array]') ? v : (v ? [v] : []);
+      st.pls = arr.filter(function (id) { return !!playlistById(id); });
+      if (!st.pls.length) st.pls = ['p80'];
+    })();
+    var loading = false, tick = null;
+    /* Le solo joue TOUJOURS le son lui-même. Sans ces deux lignes, un réglage
+       « source à part » laissé par une soirée précédente rendait l'entraînement
+       muet — dzPlay refuse de jouer quand l'app n'est pas censée produire le son. */
+    var audioAvant = appAudioMode, blindAvant = blindAudio;
+    appAudioMode = 'device'; blindAudio = true;
+    keepAwake();
+    var played = mem().tracks;
+
+    function artistes() {
+      var seen = {}, out = [];
+      st.pls.forEach(function (id) {
+        var p = playlistById(id); if (!p) return;
+        p.artists.forEach(function (a) { if (!seen[a]) { seen[a] = 1; out.push(a); } });
+      });
+      return out;
+    }
+    function pioche() {
+      if (loading) return;
+      var arts = artistes();
+      if (!arts.length) { toast('Choisis au moins une playlist', 'err'); st.phase = 'setup'; render(); return; }
+      loading = true; render();
+      autoPick({ artists: arts }, played, function (t) {
+        loading = false;
+        if (!t) { toast('Aucun morceau trouvé, réessaie', 'err'); st.phase = 'setup'; render(); return; }
+        played.push(t.id);
+        if (played.length > MEM_TRACKS) played.shift();
+        memSave();
+        st.track = { title: t.title, artist: t.artist ? t.artist.name : '', cover: (t.album && t.album.cover_medium) || '', preview: t.preview };
+        st.said = ''; st.verdict = null; st.gain = 0;
+        st.at = Date.now(); st.phase = 'play';
+        render();
+        dzPlay(st.track.preview);
+      });
+    }
+    function suivant() {
+      if (st.round >= st.total) { fin(); return; }
+      st.round++;
+      pioche();
+    }
+    function fin() {
+      dzPause(); if (tick) { clearInterval(tick); tick = null; }
+      var rec = store.get('soloBest', 0);
+      st.record = st.score > rec;
+      if (st.record) store.set('soloBest', st.score);
+      st.recVal = Math.max(rec, st.score);
+      st.phase = 'done';
+      confetti(200); beep(880, 0.3, 'sine');
+      render();
+    }
+    function repondre(txt) {
+      if (st.phase !== 'play' || !st.track) return;
+      var sec = Math.max(0, (Date.now() - st.at) / 1000);
+      var v = txt ? fuzzyHit(txt, st.track, st.ans) : 'ko';
+      // Vite = plus de points, mais une bonne réponse rapporte toujours au moins 3.
+      var base = Math.max(3, SOLO_MAX - Math.floor(sec / 2.5));
+      st.said = txt || '';
+      st.verdict = v || 'ko';
+      st.gain = (v === 'ok') ? base : (v === 'half' ? Math.ceil(base / 2) : 0);
+      st.score += st.gain;
+      if (v === 'ok' || v === 'half') { st.streak++; if (st.streak > st.best) st.best = st.streak; if (v === 'ok') st.good++; }
+      else st.streak = 0;
+      st.hist.push({ t: st.track.title, a: st.track.artist, v: st.verdict, g: st.gain, s: st.said });
+      dzPause(); if (tick) { clearInterval(tick); tick = null; }
+      st.phase = 'reveal';
+      beep(st.gain ? 880 : 160, 0.22, st.gain ? 'sine' : 'sawtooth');
+      if (v === 'ok') confetti(90);
+      render();
+    }
+
+    function render() {
+      var corps = '';
+      /* La recherche passe AVANT tout le reste : la première pioche part depuis
+         l'écran de réglages, et sans ça on restait plusieurs secondes sur cet
+         écran après avoir cliqué « Commencer », comme si le bouton était mort. */
+      if (loading) {
+        corps = '<div class="flex-1 flex flex-col items-center justify-center py-16 text-center"><div class="text-6xl mb-3 animate-pulse">💿</div><p class="text-white/60">Recherche d\'un morceau…</p></div>';
+      } else if (st.phase === 'setup') {
+        corps = [
+          '<h2 class="text-3xl font-extrabold mb-1">Entraînement 🎯</h2>',
+          '<p class="text-white/50 mb-6">Tout seul, sans code ni joueurs : l\'app envoie un extrait, tu écris ce que tu reconnais, elle corrige.</p>',
+          '<p class="text-sm text-white/60 mb-2 font-bold uppercase">Playlists</p>',
+          '<div class="flex flex-wrap gap-2 mb-1">' + PLAYLISTS.map(function (p) {
+            var on = st.pls.indexOf(p.id) >= 0;
+            return '<button type="button" class="soPl px-3 py-1.5 rounded-full text-sm font-bold ' + (on ? 'bg-neon-violet text-white' : 'bg-black/30 text-white/75') + '" data-pl="' + p.id + '">' + p.icon + ' ' + esc(p.name) + '</button>';
+          }).join('') + '</div>',
+          '<p class="text-white/35 text-xs mb-5">Tu peux en cocher plusieurs.</p>',
+          '<p class="text-sm text-white/60 mb-2 font-bold uppercase">Ce qu\'il faut trouver</p>',
+          '<div class="grid grid-cols-2 gap-2 mb-5">' + ANS_SOLO.map(function (a) {
+            return '<button type="button" class="soAns py-2.5 rounded-xl text-sm font-bold ' + (st.ans === a[0] ? 'bg-neon-cyan text-black' : 'bg-black/30 text-white/70') + '" data-ans="' + a[0] + '">' + a[1] + '</button>';
+          }).join('') + '</div>',
+          '<div class="flex items-center gap-2 mb-6 text-sm text-white/60"><span>🏁 Nombre de titres :</span><input id="soTotal" type="number" min="3" max="50" value="' + st.total + '" class="w-16 bg-black/40 rounded-lg py-1 text-center font-bold outline-none" /></div>',
+          (store.get('soloBest', 0) ? '<p class="text-center text-neon-gold font-bold mb-4">🏅 Ton record : ' + store.get('soloBest', 0) + ' pts</p>' : ''),
+          '<button id="soStart" class="btn-glow w-full py-5 rounded-2xl text-xl font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">▶️ Commencer</button>'
+        ].join('');
+      } else if (st.phase === 'play') {
+        corps = [
+          '<div class="text-center mb-3"><span class="text-white/45 text-sm">Titre ' + st.round + '/' + st.total + '</span> · <span class="text-neon-gold font-extrabold">' + st.score + ' pts</span>'
+            + (st.streak >= 2 ? ' · <span class="text-neon-lime font-bold">🔥 ' + st.streak + '</span>' : '') + '</div>',
+          '<div class="glass rounded-2xl p-6 text-center mb-4">',
+          '  <div class="text-6xl mb-2 animate-pulse">🎧</div>',
+          '  <p class="text-4xl font-extrabold text-neon-cyan"><span id="soChrono">0</span><span class="text-lg">s</span></p>',
+          '  <button id="soReplay" class="mt-3 px-4 py-2 rounded-xl glass font-bold text-sm">⏯️ Réécouter depuis le début</button>',
+          '</div>',
+          '<input id="soAnsw" maxlength="120" autocomplete="off" placeholder="' + (st.ans === 'artist' ? '🎤 Artiste…' : st.ans === 'title' ? '💿 Titre…' : st.ans === 'both' ? '💿 Titre + 🎤 artiste…' : '🎲 Titre ou artiste…') + '" class="w-full bg-black/40 rounded-xl px-4 py-4 text-lg text-center outline-none focus:ring-2 ring-neon-pink mb-3" />',
+          '<button id="soSend" class="w-full py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop mb-2">Valider</button>',
+          '<button id="soSkip" class="w-full py-3 rounded-xl glass text-white/70 font-bold text-sm">🤷 Je passe · montre-moi la réponse</button>'
+        ].join('');
+      } else if (st.phase === 'reveal') {
+        var ico = st.verdict === 'ok' ? '✅' : st.verdict === 'half' ? '➗' : '❌';
+        var lbl = st.verdict === 'ok' ? 'Trouvé !' : st.verdict === 'half' ? 'À moitié' : (st.said ? 'Raté' : 'Passé');
+        var col = st.verdict === 'ok' ? 'text-neon-lime' : st.verdict === 'half' ? 'text-neon-gold' : 'text-rose-400';
+        corps = [
+          '<div class="text-center mb-3"><span class="text-white/45 text-sm">Titre ' + st.round + '/' + st.total + '</span> · <span class="text-neon-gold font-extrabold">' + st.score + ' pts</span></div>',
+          '<div class="text-center animate-slidein">',
+          '  <div class="text-6xl mb-1">' + ico + '</div>',
+          '  <p class="text-2xl font-extrabold ' + col + '">' + lbl + (st.gain ? ' +' + st.gain : '') + '</p>',
+          (st.said ? '  <p class="text-white/45 text-sm mt-1">Tu as écrit : « ' + esc(st.said) + ' »</p>' : ''),
+          '  <div class="glass rounded-2xl p-4 mt-4 flex items-center gap-3 text-left">',
+          (st.track.cover ? '    <img src="' + esc(st.track.cover) + '" alt="" class="w-16 h-16 rounded-lg" />' : ''),
+          '    <div class="min-w-0"><div class="font-extrabold truncate">' + esc(st.track.title) + '</div><div class="text-white/55 text-sm truncate">' + esc(st.track.artist) + '</div></div>',
+          '  </div>',
+          '</div>',
+          '<button id="soNext" class="mt-5 w-full py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-cyan to-neon-lime text-black active:animate-pop">'
+            + (st.round >= st.total ? '🏁 Voir mon résultat' : 'Titre suivant ▶') + '</button>'
+        ].join('');
+      } else {
+        corps = [
+          '<div class="text-center animate-slidein">',
+          '  <div class="text-6xl mb-1">🏁</div>',
+          '  <p class="bt-title text-2xl font-extrabold glow-cyan">TERMINÉ</p>',
+          '  <p class="text-5xl font-extrabold text-neon-gold my-3">' + st.score + ' <span class="text-xl">pts</span></p>',
+          '  <p class="text-white/60">' + st.good + ' titre' + (st.good > 1 ? 's' : '') + ' trouvé' + (st.good > 1 ? 's' : '') + ' sur ' + st.total + ' · meilleure série : ' + st.best + '</p>',
+          (st.record ? '  <p class="text-neon-lime font-extrabold mt-2">🏅 Nouveau record !</p>'
+                     : '  <p class="text-white/40 text-sm mt-2">Ton record : ' + st.recVal + ' pts</p>'),
+          '</div>',
+          '<div class="glass rounded-2xl p-4 mt-5">' + st.hist.map(function (h) {
+            return '<div class="flex items-center gap-2 py-1 border-b border-white/5 last:border-0">'
+              + '<span>' + (h.v === 'ok' ? '✅' : h.v === 'half' ? '➗' : '❌') + '</span>'
+              + '<span class="flex-1 min-w-0 truncate text-sm">' + esc(h.t) + ' <span class="text-white/40">— ' + esc(h.a) + '</span></span>'
+              + '<span class="text-white/50 text-xs">' + (h.g ? '+' + h.g : '·') + '</span></div>';
+          }).join('') + '</div>',
+          '<button id="soAgain" class="mt-5 w-full py-4 rounded-2xl text-lg font-extrabold bg-gradient-to-r from-neon-pink to-neon-violet active:animate-pop">🔁 Rejouer</button>'
+        ].join('');
+      }
+
+      app.innerHTML = '<div class="bt-setup flex-1 flex flex-col px-5 py-6 max-w-md mx-auto w-full">'
+        + '<div class="flex items-center justify-between mb-4">'
+        + '<button id="soBack" class="text-white/50 text-sm">← Retour</button>'
+        + '<span class="text-sm font-bold text-white/70">🎯 Entraînement</span></div>'
+        + corps + '</div>';
+
+      /* Le chrono met à jour UNIQUEMENT son propre élément : redessiner l'écran
+         effacerait la réponse en cours de saisie (la règle d'or du projet). */
+      if (tick) { clearInterval(tick); tick = null; }
+      if (st.phase === 'play' && !loading) {
+        tick = setInterval(function () {
+          var e = document.getElementById('soChrono');
+          if (!e) { clearInterval(tick); tick = null; return; }
+          e.textContent = Math.floor((Date.now() - st.at) / 1000);
+        }, 250);
+      }
+
+      bind('#soBack', function () { location.hash = ''; });
+      Array.prototype.forEach.call(document.querySelectorAll('.soPl'), function (b) {
+        b.onclick = function () {
+          var id = b.getAttribute('data-pl'), i = st.pls.indexOf(id);
+          if (i >= 0) { if (st.pls.length > 1) st.pls.splice(i, 1); }   // jamais zéro
+          else st.pls.push(id);
+          store.set('soloPls', st.pls); render();
+        };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.soAns'), function (b) {
+        b.onclick = function () { st.ans = b.getAttribute('data-ans'); store.set('soloAns', st.ans); render(); };
+      });
+      bind('#soStart', function () {
+        var e = document.getElementById('soTotal');
+        var n = e ? parseInt(e.value, 10) : NaN;
+        st.total = isNaN(n) ? 10 : Math.min(50, Math.max(3, n));
+        store.set('soloTotal', st.total);
+        st.round = 0; st.score = 0; st.streak = 0; st.best = 0; st.good = 0; st.hist = [];
+        suivant();
+      });
+      bind('#soReplay', function () { if (st.track) dzPlay(st.track.preview); });
+      bind('#soSend', function () { var e = document.getElementById('soAnsw'); repondre(e ? e.value.trim() : ''); });
+      bind('#soSkip', function () { repondre(''); });
+      bind('#soNext', suivant);
+      bind('#soAgain', function () { st.phase = 'setup'; render(); });
+      var inp = document.getElementById('soAnsw');
+      if (inp) { inp.onkeydown = function (e) { if (e.key === 'Enter') repondre(inp.value.trim()); }; inp.focus(); }
+    }
+
+    current = { destroy: function () {
+      dzPause(); if (tick) clearInterval(tick);
+      appAudioMode = audioAvant; blindAudio = blindAvant;   // on rend l'audio comme on l'a trouvé
+    } };
+    render();
+  }
+
   function initialState(code, hostName, partyName, cfg) {
     return {
       code: code, hostName: hostName, partyName: partyName, config: cfg,
@@ -1833,6 +2075,8 @@
       answers: {}, grades: {}, turboSecs: 30, turboScores: null,
       djRotate: 0, djEvery: 5, djCount: 0, _djIdx: -1, _djLeft: 0, _djSpan: 0, dj: null,
       goal: 'none', goalVal: 0, combos: 1, jokers: 1, jok: {}, contreMode: 'ice',
+      // 🤪 Dingo : handicap permanent + ⚡ tac o tac obligatoire en fin de partie.
+      dingo: 0, tac: 0, tacLeft: 0, tacTotal: 0,
       wheel: 0, challenge: null, mult: 1, audioMode: 'device', blind: 0,
       blindFinal: 0, blindRound: 0, hostPlays: 1,
       players: {},   // id -> { id, name, score, team }
@@ -2182,7 +2426,51 @@
         }
       }, BUZZ_LOCK_MS);
     }
+    /* ---------------------------------------------------------------
+       ⚡ TAC O TAC — la finale obligatoire du mode Dingo.
+       Atteindre l'objectif n'arrête pas la partie : les écarts sont
+       ÉCRASÉS (l'ordre du classement est conservé — la partie jouée
+       compte encore — mais il ne reste qu'un pas fixe entre chacun),
+       puis on enchaîne des manches à l'aveugle qui valent double.
+       Le dernier peut donc repasser devant quoi qu'il ait fait avant :
+       c'est la promesse du mode, et elle doit tenir par le CALCUL, pas
+       par la chance. Pendant le tac o tac, plus aucun handicap : à ce
+       moment-là tout le monde est à armes égales.
+       --------------------------------------------------------------- */
+    var TAC_MULT = 2;
+    function nivelle() {
+      var arr = leaderboardArr(state.players);          // du meilleur au dernier
+      if (arr.length < 2) return;
+      var pas = Math.abs((state.config && state.config.pointsBuzz) || 5) || 5;
+      var bas = arr[arr.length - 1].score;
+      /* Les ex aequo doivent le RESTER : sans ce calcul de rang, deux joueurs à
+         égalité se retrouvaient séparés d'un pas par le seul hasard du tri. */
+      var rang = 0, rangs = [];
+      arr.forEach(function (p, i) {
+        if (i > 0 && p.score !== arr[i - 1].score) rang++;
+        rangs.push(rang);
+      });
+      arr.forEach(function (p, i) { p.score = bas + (rang - rangs[i]) * pas; });
+    }
+    function startTac() {
+      state.tac = 1;
+      // Assez de manches pour que le dernier puisse remonter tout le monde.
+      state.tacTotal = Math.max(3, Math.min(7, Object.keys(state.players).length + 1));
+      state.tacLeft = state.tacTotal;
+      nivelle();
+      state.mode = 'classic';                 // au buzz : le duel se joue de vitesse
+      state.wheel = 0; state.challenge = null; state.mult = 1;
+      confetti(200); beep(880, 0.35, 'sine');
+      toast('⚡ TAC O TAC — écarts écrasés, tout le monde peut gagner', 'ok');
+    }
+
     function launchRound() {
+      /* Objectif atteint en Dingo : on n'arrête pas, on ouvre le tac o tac. */
+      if (state.dingo && !state.tac && goalReached(state)) startTac();
+      if (state.tac) {
+        if ((state.tacLeft || 0) <= 0) { endGame(); return; }
+        state.tacLeft = state.tacLeft - 1;
+      }
       state.round += 1;
       resetRound();
       /* ROUE DES DÉFIS : on tire le défi de la manche et on l'applique. */
@@ -2201,10 +2489,13 @@
          personne n'est aux commandes — l'app choisit, joue et corrige, et le
          DJ sortant joue enfin lui aussi. */
       state.blindRound = 0;
+      /* TAC O TAC : manches à l'aveugle, personne aux commandes, l'app corrige —
+         la seule configuration où le classement ne peut être arrangé par personne. */
+      if (state.tac) { state.blindRound = 1; state.dj = null; state.source = null; }
       var nbDj = rotationArr().length;
       var tourComplet = nbDj > 0 && ((state._djIdx + 1) % nbDj === 0); // tous les DJ sont passés
       var nFinal = (state.finalN != null ? state.finalN : (state.blindFinal ? 1 : 0));
-      if (state.djRotate && nFinal > 0 && state.djCount > 0
+      if (!state.tac && state.djRotate && nFinal > 0 && state.djCount > 0
           && (state._djLeft || 0) <= 0              // le DJ courant a fini sa série
           && tourComplet
           && (state._blindDone || 0) < nFinal) {     // série de manches à l'aveugle
@@ -2481,7 +2772,7 @@
       var b = state.players[state.buzzer.id];
       // partial = mode « Titre + Artiste » avec une seule des deux trouvée → points réduits.
       var gain = correct ? (partial ? Math.ceil(state.config.pointsBuzz / 2) : state.config.pointsBuzz) : state.config.pointsWrong;
-      var combo = 0, jokerLbl = '';
+      var combo = 0, jokerLbl = '', dingoLbl = '';
       if (b) {
         // COMBO : bonnes réponses d'affilée → bonus croissant (+1, +2, +3 max)
         if (correct) {
@@ -2499,16 +2790,36 @@
         var jk = (state.jok || {})[b.id];
         if (jk === 'x2' && correct) { gain *= 2; jokerLbl = '🃏 ×2'; }
         else if (jk === 'sh' && !correct) { gain = 0; jokerLbl = '🛡️ protégé'; }
+        /* DINGO : le handicap s'applique EN DERNIER, sur le total (combo et joker
+           compris). Appliqué avant, un meneur bien lancé y échappait en empilant
+           combo × joker ×2 — soit exactement la situation que le mode existe pour
+           corriger. Le 🛡️ bouclier, lui, a déjà mis le gain à 0 : rien à faire. */
+        var dg = dingoNiveau(state, b.id);
+        if (dg) {
+          if (gain > 0) {
+            // k négatif : la bonne réponse coûte, à hauteur d'un titre — pas plus,
+            // sinon un gros combo se transformait en punition démesurée.
+            gain = (dg.k < 0) ? -Math.abs(Math.round(dg.unite)) : Math.round(gain * dg.k);
+          } else if (gain < 0) gain = Math.round(gain * dg.m);
+          dingoLbl = '🤪 ' + dg.icon;
+        }
+        // ⚡ TAC O TAC : plus de handicap, mais chaque manche vaut double.
+        if (state.tac) gain *= TAC_MULT;
         b.score += gain;
       }
       // Le vote est un pari : bien juger rapporte, mal juger coûte.
       Object.keys(state.votes).forEach(function (vid) {
         var agreed = (state.votes[vid] === 1) === correct;
         if (!state.players[vid]) return;
-        state.players[vid].score += agreed ? state.config.pointsVote : (state.config.pointsVoteWrong || 0);
+        var vg = agreed ? state.config.pointsVote : (state.config.pointsVoteWrong || 0);
+        /* Le handicap vaut AUSSI sur les votes : sans ça, le meneur bridé sur les
+           buzz se refaisait tranquillement en jugeant les réponses des autres. */
+        var dv = dingoNiveau(state, vid);
+        if (dv && vg > 0) vg = Math.round(vg * Math.max(0, dv.k));
+        state.players[vid].score += vg;
       });
       grantBonuses();
-      state.result = { correct: correct, partial: !!partial, gain: gain, combo: combo, joker: jokerLbl, streak: b ? b.streak : 0 };
+      state.result = { correct: correct, partial: !!partial, gain: gain, combo: combo, joker: jokerLbl, dingo: dingoLbl, streak: b ? b.streak : 0 };
       dzPause();
       /* Reste-t-il quelqu'un qui pourrait rebondir ? On inscrit d'abord celui qui vient
          de tenter dans `tried` : il ne rebondit pas sur sa propre erreur, et la liste
@@ -2601,7 +2912,20 @@
     }
     function applyTurbo() {
       var res = turboPoints();
-      Object.keys(res).forEach(function (id) { if (state.players[id]) state.players[id].score += res[id].pts; });
+      /* Le Turbo distribue ses points par un chemin à lui : le handicap Dingo doit
+         y être appliqué aussi, sinon changer de mode en cours de partie suffisait
+         à l'annuler. On corrige la valeur affichée, pas seulement le score, pour
+         que chacun voie ce qu'il a réellement pris. */
+      Object.keys(res).forEach(function (id) {
+        if (!state.players[id]) return;
+        var dt = dingoNiveau(state, id);
+        if (dt && res[id].pts > 0) {
+          res[id].pts = (dt.k < 0) ? -Math.abs(Math.round(dt.unite)) : Math.round(res[id].pts * dt.k);
+          res[id].dingo = dt.icon;
+        }
+        if (state.tac) res[id].pts *= TAC_MULT;
+        state.players[id].score += res[id].pts;
+      });
       grantBonuses();
       state.turboScores = res;
       if (roundTrack) { state.reveal = { title: roundTrack.title, artist: roundTrack.artist, cover: roundTrack.cover, year: roundTrack.year }; roundTrack = null; }
@@ -2619,6 +2943,8 @@
       });
       state.round = 0; state.phase = 'lobby'; state._srcIdx = -1; state.fredCount = 0; state.source = null;
       state._djIdx = -1; state.djCount = 0; state.dj = null; state._djLeft = 0; state._djSpan = 0;
+      // Sans ça, la partie suivante repartait directement en tac o tac.
+      state.tac = 0; state.tacLeft = 0; state.tacTotal = 0; state._blindDone = 0; state._finTour = 0;
       dzPause(); roundTrack = null;
       resetRound(); state.history = [];
       publish();
@@ -2876,7 +3202,10 @@
         if (s.blind) {
           dzBar = '<div class="glass rounded-2xl p-3 mb-3 text-center">'
             + '<div class="text-xs font-bold uppercase text-white/50">🕶️ Partie à l\'aveugle</div>'
-            + '<div class="font-extrabold mt-0.5">' + (plOn ? esc(plLabel) : 'Playlist') + ' · manche ' + Math.max(1, s.round) + '/' + (s.goalVal || 10) + '</div>'
+            // Le tac o tac se joue APRÈS l'objectif : « manche 5/4 » n'aurait aucun sens.
+            + '<div class="font-extrabold mt-0.5">' + (plOn ? esc(plLabel) : 'Playlist') + ' · '
+            + (s.tac ? 'tac o tac ' + Math.max(1, (s.tacTotal || 0) - (s.tacLeft || 0)) + '/' + (s.tacTotal || 0)
+                     : 'manche ' + Math.max(1, s.round) + '/' + (s.goalVal || 10)) + '</div>'
             + '<div class="text-white/45 text-xs mt-1">Personne ne connaît la réponse — l\'app choisit, joue et corrige.</div></div>';
         } else {
         // Le choix de la source sonore ne sert qu'au réglage : discret hors du salon.
@@ -3239,8 +3568,8 @@
           (s.result.none
             ? '  <p class="text-white/50 mt-1">Aucun point — on passe au titre suivant.</p>'
             : '  <p class="text-white/60 mt-1">' + esc(s.buzzer ? s.buzzer.name : '') + ' ' + ((s.result.gain != null ? s.result.gain : 0) >= 0 ? '+' : '') + (s.result.gain != null ? s.result.gain : 0) + ' pts' + (s.result.partial ? ' <span class="text-neon-gold">(à moitié)</span>' : '') + '</p>'),
-          ((s.result.combo || s.result.joker || (s.result.streak || 0) >= 2)
-            ? '  <p class="text-sm font-bold mt-1">' + (s.result.combo ? '<span class="text-neon-gold">🔥 combo ×' + s.result.streak + ' (+' + s.result.combo + ')</span> ' : '') + (s.result.joker ? '<span class="text-neon-cyan">' + s.result.joker + '</span>' : '') + '</p>'
+          ((s.result.combo || s.result.joker || s.result.dingo || (s.result.streak || 0) >= 2)
+            ? '  <p class="text-sm font-bold mt-1">' + (s.result.combo ? '<span class="text-neon-gold">🔥 combo ×' + s.result.streak + ' (+' + s.result.combo + ')</span> ' : '') + (s.result.joker ? '<span class="text-neon-cyan">' + s.result.joker + '</span> ' : '') + (s.result.dingo ? '<span class="text-rose-300">' + s.result.dingo + ' handicap dingo</span>' : '') + '</p>'
             : ''),
                revealCard(s.reveal),
                bonusBanner(s),
@@ -3285,7 +3614,9 @@
         (s.dj ? '  <div class="glass rounded-2xl p-3 mb-4 flex items-center gap-3"><span class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0" style="background:' + avatarGrad(s.dj.name) + '">' + esc(initials(s.dj.name)) + '</span><div class="flex-1 min-w-0"><div class="text-xs text-white/50 uppercase font-bold">🎧 DJ de cette série</div><div class="font-extrabold truncate">' + esc(s.dj.name) + '</div></div><div class="text-right shrink-0"><div class="text-neon-cyan font-extrabold">'
           + (function () { var sp = s._djSpan || s.djEvery || 5, f = sp - (s._djLeft || 0); return s.djEvery === -1 ? f + '/🎲' : f + '/' + sp; })()
           + '</div><div class="text-white/40 text-xs">titres</div></div></div>' : ''),
-        (s.blindRound ? '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(255,46,154,.6)">'
+        // Le tac o tac est déjà une manche à l'aveugle : deux bandeaux pour dire
+        // la même chose, c'est du bruit — celui du tac o tac est plus précis.
+        (s.blindRound && !s.tac ? '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(255,46,154,.6)">'
           + '<div class="text-2xl">🕶️</div><p class="bt-title font-extrabold text-neon-pink">FINALE À L\'AVEUGLE</p>'
           + '<p class="text-white/55 text-sm">Pas de DJ : tout le monde joue, l\'app corrige.</p></div>' : ''),
         // Défi tiré par la roue (mis en avant, il change les règles de la manche)
@@ -3297,8 +3628,23 @@
             + ((s.mult || 1) > 1 ? '<div class="text-neon-gold font-bold text-sm mt-1">Points ×' + s.mult + (s.challenge.risky ? ' (malus aussi !)' : '') + '</div>' : '')
             + '</div>'
           : ''),
+        // L'hôte joue lui aussi en Dingo : il voit son propre barème, comme les autres.
+        (hostCanPlay() ? dingoBadge(s, ME) : ''),
         (function () {
+          /* Le tac o tac passe AVANT l'objectif : l'objectif est atteint (c'est
+             justement ce qui l'a déclenché), afficher « objectif atteint » à ce
+             moment-là laisserait croire que la partie peut s'arrêter là. */
+          if (s.tac && s.phase !== 'ended') {
+            return '  <div class="glass rounded-2xl p-3 mb-4 text-center animate-slidein" style="border-color:rgba(244,63,94,.7)"><div class="text-2xl">⚡</div>'
+              + '<p class="font-extrabold text-rose-300">TAC O TAC — manche ' + Math.max(1, (s.tacTotal || 0) - (s.tacLeft || 0)) + ' / ' + (s.tacTotal || 0) + '</p>'
+              + '<p class="text-white/60 text-sm">Écarts écrasés · points ×2 · plus aucun handicap</p></div>';
+          }
           var g = goalReached(s);
+          if (s.dingo && g && !s.tac && s.phase !== 'ended' && s.phase !== 'lobby') {
+            return '  <div class="glass rounded-2xl p-3 mb-4 text-center" style="border-color:rgba(244,63,94,.7)"><div class="text-2xl">⚡</div>'
+              + '<p class="font-extrabold text-rose-300">Objectif atteint — place au TAC O TAC</p>'
+              + '<p class="text-white/60 text-sm">« Manche suivante » écrase les écarts et lance la finale : le dernier peut encore tout gagner.</p></div>';
+          }
           if (!g || s.phase === 'ended' || s.phase === 'lobby') {
             // Sinon : progression discrète vers l'objectif
             // Tournoi : la longueur découle du nombre de joueurs × titres par DJ.
@@ -3868,7 +4214,13 @@
         center = '<div class="text-center animate-slidein"><p class="text-white/55 uppercase text-sm">L\'année était</p><div class="text-6xl font-extrabold text-neon-gold my-2 text-glow">' + (s.year || '?') + '</div>' + (myG != null ? '<p class="text-white/70">Ton choix : <span class="font-bold">' + myG + '</span></p>' : '<p class="text-white/40">Tu n\'as pas répondu</p>') + (iWon ? '<p class="text-neon-lime font-extrabold text-xl mt-2">🏆 Gagné ! +' + s.config.pointsBuzz + '</p>' : '') + revealCard(s.reveal) + '</div>';
       } else if (s.phase === 'reveal') {
         var goodForMe = isBuzzer && s.result.correct;
-        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (s.result.none ? 'On passe au titre suivant' : goodForMe ? 'Bien joué 🔥' : esc(s.buzzer ? s.buzzer.name : '')) + '</p>' + revealCard(s.reveal) + bonusBanner(s) + '</div>';
+        /* Dingo : celui qui a bien répondu peut quand même perdre des points. On
+           l'écrit noir sur blanc à la révélation, sinon le score change sans que
+           personne comprenne pourquoi — et une règle incomprise passe pour un bug. */
+        var dingoTxt = (s.result.dingo && s.result.gain != null)
+          ? '<p class="text-rose-300 font-bold mt-1">' + s.result.dingo + ' handicap dingo · '
+            + (s.result.gain > 0 ? '+' : '') + s.result.gain + ' pt' + (Math.abs(s.result.gain) > 1 ? 's' : '') + '</p>' : '';
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (s.result.none ? 'On passe au titre suivant' : goodForMe ? 'Bien joué 🔥' : esc(s.buzzer ? s.buzzer.name : '')) + '</p>' + dingoTxt + revealCard(s.reveal) + bonusBanner(s) + '</div>';
       } else if (s.phase === 'ended') {
         center = [
           '<div class="w-full text-center animate-slidein">',
@@ -3889,9 +4241,14 @@
         '    <div class="text-sm font-bold">' + esc(mine && mine.name ? mine.name : name) + ' · <span class="text-neon-gold">' + myScore + ' pts</span>' + (rank ? ' · #' + rank : '') + '</div>',
         '  </div>',
         (mine && typeof mine.team === 'number' ? '  <div class="text-center mt-1"><span class="inline-block px-3 py-1 rounded-full text-sm font-bold" style="background:' + (TEAM_COLORS[mine.team] || '#888') + '33;color:' + (TEAM_COLORS[mine.team] || '#fff') + '">👥 Équipe ' + (TEAM_NAMES[mine.team] || '') + '</span></div>' : ''),
-        (s.blindRound && s.phase !== 'ended'
+        (s.blindRound && !s.tac && s.phase !== 'ended'
           ? '  <div class="text-center mt-2 mb-1 animate-slidein"><span class="inline-block px-4 py-1.5 rounded-2xl bg-neon-pink/25 ring-1 ring-neon-pink font-extrabold">🕶️ Finale à l\'aveugle — personne ne connaît la réponse</span></div>'
           : ''),
+        (s.tac && s.phase !== 'ended'
+          ? '  <div class="text-center mt-2 mb-1 animate-slidein"><span class="inline-block px-4 py-1.5 rounded-2xl bg-rose-500/25 ring-1 ring-rose-400 font-extrabold">⚡ TAC O TAC ' + Math.max(1, (s.tacTotal || 0) - (s.tacLeft || 0)) + '/' + (s.tacTotal || 0) + ' — points ×2, tout le monde à égalité</span></div>'
+          : ''),
+        // Le barème Dingo de CE joueur, annoncé avant qu'il décide de buzzer.
+        dingoBadge(s, ME),
         (s.wheel && s.challenge && s.phase !== 'ended'
           ? '  <div class="text-center mt-2 mb-1 animate-slidein"><div class="inline-block px-4 py-1.5 rounded-2xl bg-neon-pink/20 ring-1 ring-neon-pink">'
             + '<span class="font-extrabold">' + s.challenge.icon + ' ' + esc(s.challenge.name) + '</span>'
@@ -4168,6 +4525,48 @@
     }
     return p.joueurs + ' joueur' + (p.joueurs > 1 ? 's' : '') + ' × ' + p.parDj + ' titres = ' + p.dj
       + (p.aveugle ? ' + ' + p.aveugle + ' à l\'aveugle' : '') + ' = <b>' + p.total + ' manches</b>';
+  }
+
+  /* ---------------------------------------------------------------
+     🤪 MODE DINGO — l'avance se paie.
+     Le coefficient dépend de l'écart à la MOYENNE, mesuré en « titres »
+     (1 titre = la valeur d'une bonne réponse). Il est ANNONCÉ sur l'écran
+     de chacun AVANT le buzz : c'est le cœur du mode, pas un piège. Le
+     meneur voit qu'une bonne réponse va lui coûter et peut choisir de se
+     taire — c'est là que le jeu devient intéressant. Un malus découvert
+     après coup serait vécu comme un bug, pas comme une règle.
+     --------------------------------------------------------------- */
+  var DINGO_PALIERS = [
+    { min:   3, k:  -1, m: 1,  icon: '🤪', lbl: 'Trop d\'avance : une bonne réponse te COÛTE des points' },
+    { min:   2, k:   0, m: 1,  icon: '🧊', lbl: 'Tu mènes trop : plus rien à gagner sur ce titre' },
+    { min:   1, k:  .5, m: 1,  icon: '🪫', lbl: 'En tête : demi-points' },
+    { min:  -1, k:   1, m: 1,  icon: '🎵', lbl: 'Dans la moyenne : points normaux' },
+    { min:  -2, k: 1.5, m: .5, icon: '🔥', lbl: 'Distancé : points ×1,5 et malus réduit de moitié' },
+    { min: -99, k:   2, m: 0,  icon: '🚀', lbl: 'Largué : points ×2 et une erreur ne coûte RIEN' }
+  ];
+  function dingoNiveau(s, id) {
+    if (!s || !s.dingo || s.tac) return null;   // pas de handicap pendant le tac o tac
+    if (!s.players || !s.players[id]) return null;
+    var arr = Object.keys(s.players).map(function (k) { return s.players[k]; });
+    if (arr.length < 2) return null;            // seul, l'écart n'a aucun sens
+    var tot = 0; arr.forEach(function (p) { tot += p.score; });
+    // Le barème Turbo est sur 100, pas sur 5 : l'unité d'écart suit le mode.
+    var unite = (s.mode === 'turbo') ? 80 : (Math.abs((s.config && s.config.pointsBuzz) || 5) || 5);
+    var avance = (s.players[id].score - tot / arr.length) / unite;
+    for (var i = 0; i < DINGO_PALIERS.length; i++) {
+      var p = DINGO_PALIERS[i];
+      if (avance >= p.min) return { k: p.k, m: p.m, icon: p.icon, lbl: p.lbl, unite: unite, avance: avance };
+    }
+    return null;
+  }
+  /* Bandeau affiché à chacun : « voilà ce que ce titre te rapporte, à toi ». */
+  function dingoBadge(s, id) {
+    var n = dingoNiveau(s, id);
+    if (!n || s.phase === 'ended' || s.phase === 'lobby') return '';
+    var col = n.k <= 0 ? 'rgba(244,63,94,.6)' : (n.k > 1 ? 'rgba(163,230,53,.6)' : 'rgba(255,255,255,.28)');
+    return '  <div class="text-center mt-2 mb-1 animate-slidein"><div class="inline-block px-4 py-1.5 rounded-2xl" style="background:rgba(0,0,0,.35);border:1px solid ' + col + '">'
+      + '<span class="font-extrabold">🤪 DINGO ' + n.icon + '</span>'
+      + '<div class="text-white/65 text-xs">' + n.lbl + '</div></div></div>';
   }
 
   function goalReached(s) {

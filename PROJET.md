@@ -60,6 +60,7 @@ déconnexions.
 | ⚔️ **Duel à deux** | Aveugle + buzz + réponse « titre OU artiste » |
 | 🔊 **Animateur unique** | L'hôte anime et valide, il ne joue pas |
 | 🎡 **Soirée surprise** | Rotation + roue des défis |
+| 🤪 **Mode Dingo** | Aveugle + buzz, **handicap permanent** selon l'écart, puis **⚡ tac o tac** obligatoire |
 
 **Tous les réglages détaillés sont repliés sous « ⚙️ Personnaliser (facultatif) »** —
 les joueurs veulent démarrer sans lire.
@@ -74,6 +75,7 @@ les joueurs veulent démarrer sans lire.
 | ⚔️ Duel | Idem + équipes (on est deux) |
 | 🔊 Animateur unique | « Je joue aussi » (le style **est** « l'hôte ne joue pas »), partie à l'aveugle, finale à l'aveugle |
 | 🎡 Soirée surprise | Partie à l'aveugle + mode de départ (la roue l'écrase à chaque manche) |
+| 🤪 Mode Dingo | Comme « Tous à l'aveugle » + équipes (le handicap est **individuel**) |
 
 Le bloc « rotation du DJ » et les « manches à l'aveugle en fin de tour » suivent
 `syncDjUI()` : sans rotation, il n'y a pas de fin de tour.
@@ -90,6 +92,52 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
 > ni dans la création, ni dans le sélecteur de mode, ni dans la roue des défis. Le
 > code interne (`state.source`, `mode === 'fredonne'`) reste en place mais **inerte** :
 > l'arracher aurait touché les chemins de buzz et de verdict tout juste corrigés.
+
+### 🤪 Mode Dingo (`state.dingo`) — équilibrage forcé
+Un style à part : **l'avance se paie**. Le coefficient dépend de l'écart à la
+**moyenne**, mesuré en « titres » (1 titre = `pointsBuzz`, ou 80 en Turbo) —
+`dingoNiveau(s, id)`, table `DINGO_PALIERS` :
+
+| Avance (en titres) | Gains | Malus | Libellé |
+|---|---|---|---|
+| ≥ +3 | **une bonne réponse coûte 1 titre** | ×1 | 🤪 Trop d'avance |
+| ≥ +2 | ×0 | ×1 | 🧊 Plus rien à gagner |
+| ≥ +1 | ×0,5 | ×1 | 🪫 Demi-points |
+| −1 → +1 | ×1 | ×1 | 🎵 Normal |
+| ≥ −2 | ×1,5 | ×0,5 | 🔥 Distancé |
+| < −2 | ×2 | **×0** | 🚀 Largué : l'erreur est gratuite |
+
+Points de vigilance :
+- Le handicap s'applique **en dernier**, après combo et joker : appliqué avant, un
+  meneur bien lancé y échappait en empilant combo × ×2 — la situation même que le
+  mode existe pour corriger.
+- Il vaut **aussi sur les votes** (sinon le meneur bridé se refaisait en jugeant) et
+  **aussi en Turbo** (`applyTurbo` distribue par un chemin à lui — sans ça, changer
+  de mode annulait le mode).
+- Il est **annoncé avant le buzz** sur l'écran de chacun (`dingoBadge`) : c'est le
+  cœur du jeu (le meneur peut choisir de se taire), et un malus découvert après coup
+  serait vécu comme un bug.
+
+**⚡ Tac o tac** (`state.tac`) — atteindre l'objectif n'arrête pas la partie :
+`nivelle()` **écrase les écarts** (l'ordre du classement est conservé, ex aequo
+compris, mais il ne reste qu'un pas de `pointsBuzz` entre chaque rang), puis
+`max(3, min(7, nb_joueurs + 1))` manches à l'aveugle qui valent **×2**, sans aucun
+handicap. Le dernier peut donc repasser devant **par le calcul**, pas par chance.
+La partie se termine toute seule quand `tacLeft` tombe à 0. `replay()` remet
+`tac/tacLeft/tacTotal/_blindDone/_finTour` à zéro — sans quoi la partie suivante
+repartait directement en tac o tac.
+
+### 🎯 Mode solo entraînement (`#solo`, `startSolo`)
+Contrôleur autonome : **aucun canal temps réel, aucun joueur, aucun hôte**. L'app
+tire un morceau, le joue, corrige (`fuzzyHit`) et compte. Barème : 12 points pour une
+réponse immédiate, −1 toutes les 2,5 s, plancher à 3 ; moitié pour un « à moitié ».
+Record dans `bt.soloBest`, réglages dans `bt.soloPls` / `bt.soloAns` / `bt.soloTotal`.
+- La **mémoire musicale est partagée** avec les parties : s'entraîner l'après-midi ne
+  fait pas ressortir les mêmes titres le soir.
+- `appAudioMode`/`blindAudio` sont forcés puis **restaurés au `destroy`** : sans ça un
+  réglage « source à part » laissé par une soirée précédente rendait le solo muet.
+- Le chrono met à jour **son seul élément** (`#soChrono`) : redessiner effacerait la
+  réponse en cours de saisie.
 
 ### Mécaniques
 - **Rotation DJ** — le DJ choisit ses morceaux, les lance, **valide**, **enchaîne** et
@@ -250,6 +298,16 @@ sans rotation, pour qu'aucun réglage enregistré ne contredise le style.
 21. **Vider une mémoire partagée par référence** — `playedIds` pointe directement sur
    `mem().tracks`. Remplacer l'objet à la remise à zéro laissait la partie en cours
    écrire dans une liste orpheline. Vider **sur place** (`arr.length = 0`).
+22. **Un écran d'attente placé après le cas courant ne s'affiche jamais.** Dans
+   `startSolo`, la branche `loading` venait après `phase === 'setup'` : la première
+   recherche partant de l'écran de réglages, on restait plusieurs secondes dessus
+   après avoir cliqué « Commencer », comme si le bouton était mort. **L'attente
+   passe en premier.**
+23. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
+   handicap Dingo devait être posé dans `validate()` (buzz), sur les votes **et**
+   dans `applyTurbo()` — sinon un simple changement de mode l'annulait en silence.
+   Même piège que l'asymétrie hôte/joueur : une règle écrite à un seul endroit ne
+   couvre jamais le jeu entier.
 
 ---
 
@@ -309,8 +367,16 @@ ce qui annule silencieusement l'action testée).
   mais ça ne remplace pas la soirée réelle : la plupart des bugs sérieux ont été
   trouvés par l'utilisateur en conditions réelles. **Les retours terrain restent la
   meilleure source de bugs.**
+- **Mode Dingo : réglage des paliers non validé en soirée.** La table `DINGO_PALIERS`
+  a été calibrée au jugé (seuils à 1/2/3 titres d'écart). À confirmer en conditions
+  réelles : est-ce que « une bonne réponse coûte des points » frustre ou amuse ?
+- **Mode solo : le frottement n'est pas en cause, mais l'autoplay si.** `dzPlay` part
+  d'un callback asynchrone (après la recherche du morceau) : sur navigateur strict,
+  la lecture peut être refusée. Le bouton « ⏯️ Réécouter depuis le début » sert de
+  filet ; à surveiller sur iPhone.
 - Idées en réserve : intro seule, l'intrus, génériques TV, mort subite, stats joueurs,
-  i18n anglais.
+  i18n anglais. Un « mode à réfléchir pour ralentir » a été évoqué par l'utilisateur
+  sans être précisé — non implémenté.
 
 ---
 

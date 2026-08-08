@@ -2152,7 +2152,24 @@
       autoLoading = true;
       autoPick(pl, playedIds, function (t) {
         autoLoading = false;
-        if (!t) { toast('Playlist : aucun morceau trouvé, réessaie', 'err'); return; }
+        if (!t) {
+          /* Recherche bredouille alors qu'une manche l'attend. Si des filtres sont
+             actifs, ce sont eux le problème neuf fois sur dix — et à l'aveugle l'hôte
+             n'a aucun écran pour les corriger : il cliquerait « Lancer » indéfiniment
+             sans que rien ne se passe. On les abandonne et on repart sur une playlist
+             sûre. Une seule reprise : au second échec (réseau coupé), on rend la main. */
+          if (attenteMorceau && fActive()) {
+            autoF = { d: [], g: [], l: [] }; store.set('autoFilters', autoF);
+            autoPls = ['p80']; savePls();
+            toast('Ces filtres ne donnent rien — retour aux Années 80', 'info');
+            prefetchAuto();
+            return;
+          }
+          // On lâche l'attente : sinon le lancement restait suspendu sans fin.
+          attenteMorceau = false;
+          toast('Aucun morceau trouvé — vérifie ta connexion, puis relance', 'err');
+          renderHost(); return;
+        }
         playedIds.push(t.id); playedNow++;
         if (playedIds.length > MEM_TRACKS) playedIds.shift();
         memSave();
@@ -2161,6 +2178,7 @@
         // Le morceau arrive après coup : si la manche est déjà lancée, on le joue.
         if (state.phase === 'buzzing' || state.phase === 'racing' || state.phase === 'year_guess') dzPlay(roundTrack.preview);
         renderHost();
+        if (attenteMorceau) { attenteMorceau = false; launchRound(); }  // la manche attendait ce morceau
       });
     }
 
@@ -2258,9 +2276,9 @@
           beep(520, 0.12, 'sine');
           // À l'aveugle, personne ne peut juger (personne ne connaît le titre) :
           // l'app tranche seule, tout de suite. Idéal à deux joueurs.
-          if ((state.blind || state.blindRound) && state.mode !== 'fredonne' && roundTrack) {
-            validate(state.suggest === 'ok', state.suggest === 'half');
-            return;
+          if (appCorrige()) {
+            if (roundTrack) { validate(state.suggest === 'ok', state.suggest === 'half'); return; }
+            manchePerdue(); return;   // sans référence, on n'envoie personne juger à l'aveugle
           }
           state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
           state.voteAt = Date.now(); // départ du temps de vote des autres joueurs
@@ -2464,7 +2482,50 @@
       toast('⚡ TAC O TAC — écarts écrasés, tout le monde peut gagner', 'ok');
     }
 
+    /* ---------------------------------------------------------------
+       À L'AVEUGLE, L'APP EST LE SEUL JUGE POSSIBLE : celui qui répond ne
+       valide pas sa propre réponse, et les autres ne connaissent pas le
+       titre. Sans morceau de référence, plus personne ne peut trancher —
+       à deux joueurs, la table reste bloquée sur une réponse en suspens
+       (bug rencontré en soirée). On attend donc le morceau AVANT d'ouvrir
+       le buzz, au lieu de lancer une manche que rien ne pourra clore.
+       --------------------------------------------------------------- */
+    var attenteMorceau = false;
+
     function launchRound() {
+      syncBlindAudio();
+      /* On ne teste QUE state.blind : `blindRound` porte encore la valeur de la manche
+         précédente à cet instant (il est recalculé plus bas). Les manches à l'aveugle
+         de fin de tour passent, elles, par le filet de manchePerdue(). */
+      if (state.blind && !roundTrack && canPlayInApp()) {
+        if (!plActive() && !fActive()) { autoPls = ['p80']; savePls(); }
+        /* Les filtres survivent d'une partie à l'autre : un croisement qui ne
+           correspond à aucun artiste (hérité d'une soirée précédente) arrêtait la
+           partie net — et à l'aveugle, l'hôte n'a aucun écran pour les corriger.
+           On répare tout seul plutôt que de laisser la soirée en panne. */
+        var dispo = currentArtists();
+        if (!dispo || !dispo.length) {
+          autoF = { d: [], g: [], l: [] }; store.set('autoFilters', autoF);
+          autoPls = ['p80']; savePls();
+          toast('Aucun artiste ne correspondait aux filtres — retour aux Années 80', 'info');
+        }
+        attenteMorceau = true;
+        prefetchAuto();                       // la recherche est asynchrone…
+        if (!roundTrack) {                    // …donc on rend la main et on reviendra ici
+          /* Sauf si AUCUNE recherche n'a pu démarrer (croisement de filtres qui ne
+             correspond à aucun artiste) : là, personne ne rappellera launchRound et
+             l'hôte ne pourrait plus jamais lancer de manche. Une attente sans fin est
+             pire que le bug qu'on répare — on rend la main en disant pourquoi. */
+          if (!autoLoading) {
+            attenteMorceau = false;
+            toast('Aucun morceau disponible — élargis la playlist ou les filtres', 'err');
+            renderHost(); return;
+          }
+          toast('🔎 Recherche du morceau…', 'info');
+          renderHost(); return;
+        }
+        attenteMorceau = false;
+      }
       /* Objectif atteint en Dingo : on n'arrête pas, on ouvre le tac o tac. */
       if (state.dingo && !state.tac && goalReached(state)) startTac();
       if (state.tac) {
@@ -2686,9 +2747,9 @@
            l'hôte n'avait ni suggestion ni validation automatique, il arrivait donc
            toujours sur l'écran de verdict… qu'il pouvait trancher lui-même. */
         state.suggest = (state.mode !== 'fredonne') ? fuzzyHit(state.answer, roundTrack, state.answerMode) : null;
-        if ((state.blind || state.blindRound) && state.mode !== 'fredonne' && roundTrack) {
-          validate(state.suggest === 'ok', state.suggest === 'half');
-          return;
+        if (appCorrige()) {
+          if (roundTrack) { validate(state.suggest === 'ok', state.suggest === 'half'); return; }
+          manchePerdue(); return;   // même filet que pour les joueurs
         }
         state.phase = (state.mode === 'fredonne') ? 'judging' : 'voting';
         state.voteAt = Date.now();
@@ -2767,6 +2828,25 @@
       state.bonusMsg = msgs.length ? msgs : null;
     }
 
+    /* FILET — à l'aveugle sans morceau de référence (recherche échouée, téléphone de
+       l'hôte rechargé en pleine manche), l'app ne peut plus juger. Il ne faut SURTOUT
+       pas renvoyer la décision à la table : celui qui a répondu n'a pas le droit de se
+       valider, et les autres ne connaissent pas le titre — à deux, plus personne ne
+       peut rien faire et la partie s'arrête net. On annule la manche, personne ne
+       marque, on enchaîne : une manche blanche vaut mieux qu'une partie bloquée. */
+    function manchePerdue() {
+      dzPause();
+      roundTrack = null;
+      state.reveal = null;
+      state.result = { none: true, lost: true };
+      state.phase = 'reveal';
+      beep(200, 0.2, 'sawtooth');
+      toast('Morceau introuvable — manche annulée, on enchaîne', 'err');
+      publish();
+    }
+    /* Vrai pour toute manche où c'est l'app qui corrige (partie ou manche à l'aveugle). */
+    function appCorrige() { return !!(state.blind || state.blindRound) && state.mode !== 'fredonne'; }
+
     function validate(correct, partial) {
       if (!state.buzzer) return;
       var b = state.players[state.buzzer.id];
@@ -2801,7 +2881,9 @@
             // sinon un gros combo se transformait en punition démesurée.
             gain = (dg.k < 0) ? -Math.abs(Math.round(dg.unite)) : Math.round(gain * dg.k);
           } else if (gain < 0) gain = Math.round(gain * dg.m);
-          dingoLbl = '🤪 ' + dg.icon;
+          // On n'annonce le handicap que s'il a changé quelque chose : au palier
+          // neutre, « handicap dingo » sur un score inchangé n'est que du bruit.
+          if (dg.k !== 1 || dg.m !== 1) dingoLbl = '🤪 ' + dg.icon;
         }
         // ⚡ TAC O TAC : plus de handicap, mais chaque manche vaut double.
         if (state.tac) gain *= TAC_MULT;
@@ -2860,6 +2942,9 @@
          • le tout 1er à répondre juste gagne +10 « éclair » (plafonné à 100) */
     function closeRacing() {
       dzPause();
+      /* Même filet qu'au buzz : sans morceau de référence, fuzzyHit note tout le monde
+         « faux » et la manche punit des joueurs qui n'y sont pour rien. */
+      if (appCorrige() && !roundTrack) { manchePerdue(); return; }
       state.grades = {};
       Object.keys(state.answers).forEach(function (id) {
         var g = fuzzyHit(state.answers[id].text, roundTrack, state.answerMode);
@@ -3563,9 +3648,11 @@
         phaseBlock = [
           '<div class="glass rounded-2xl p-8 text-center animate-slidein">',
           // s.result.none = personne n'a trouvé (tout le monde a passé) : pas de buzzer.
-          '  <div class="text-6xl mb-2">' + (s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div>',
-          '  <p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
-          (s.result.none
+          '  <div class="text-6xl mb-2">' + (s.result.lost ? '📻' : s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div>',
+          '  <p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.lost ? 'Manche annulée' : s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p>',
+          (s.result.lost
+            ? '  <p class="text-white/50 mt-1">L\'app n\'a pas pu récupérer le morceau : elle ne peut pas corriger, donc personne ne marque. On enchaîne.</p>'
+            : s.result.none
             ? '  <p class="text-white/50 mt-1">Aucun point — on passe au titre suivant.</p>'
             : '  <p class="text-white/60 mt-1">' + esc(s.buzzer ? s.buzzer.name : '') + ' ' + ((s.result.gain != null ? s.result.gain : 0) >= 0 ? '+' : '') + (s.result.gain != null ? s.result.gain : 0) + ' pts' + (s.result.partial ? ' <span class="text-neon-gold">(à moitié)</span>' : '') + '</p>'),
           ((s.result.combo || s.result.joker || s.result.dingo || (s.result.streak || 0) >= 2)
@@ -3688,8 +3775,11 @@
         if (copy) copy.onclick = function () { navigator.clipboard && navigator.clipboard.writeText(joinUrl); toast('Lien copié !', 'ok'); };
         var l = $('#launch'); if (l) l.onclick = function () {
           if (!Object.keys(s.players).length) { toast('Aucun joueur connecté', 'err'); return; }
-          // L'app doit jouer le son mais aucun morceau n'est prêt → on prévient au lieu de bloquer.
-          if (canPlayInApp() && !roundTrack && !s.dj) {
+          /* L'app doit jouer le son mais aucun morceau n'est prêt → on prévient au lieu
+             de bloquer. Sauf en partie à l'aveugle : là, launchRound() va chercher le
+             morceau et attendre tout seul — poser la question n'apporterait rien et
+             obligeait à répondre « oui » pour lancer une manche impossible à corriger. */
+          if (canPlayInApp() && !roundTrack && !s.dj && !s.blind) {
             if (!confirm('Aucun morceau sélectionné.\n\nL\'app est réglée pour jouer la musique elle-même : choisis un morceau (ou une playlist auto) avant de lancer.\n\nLancer quand même ?')) return;
           }
           launchRound();
@@ -4220,7 +4310,7 @@
         var dingoTxt = (s.result.dingo && s.result.gain != null)
           ? '<p class="text-rose-300 font-bold mt-1">' + s.result.dingo + ' handicap dingo · '
             + (s.result.gain > 0 ? '+' : '') + s.result.gain + ' pt' + (Math.abs(s.result.gain) > 1 ? 's' : '') + '</p>' : '';
-        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (s.result.none ? 'On passe au titre suivant' : goodForMe ? 'Bien joué 🔥' : esc(s.buzzer ? s.buzzer.name : '')) + '</p>' + dingoTxt + revealCard(s.reveal) + bonusBanner(s) + '</div>';
+        center = '<div class="text-center animate-slidein"><div class="text-6xl mb-2">' + (s.result.lost ? '📻' : s.result.none ? '🤷' : s.result.correct ? '✅' : '❌') + '</div><p class="text-2xl font-extrabold ' + (s.result.none ? 'text-white/70' : s.result.correct ? 'text-neon-lime' : 'text-rose-400') + '">' + (s.result.lost ? 'Manche annulée' : s.result.none ? 'Personne ne trouve' : s.result.correct ? 'Bonne réponse !' : 'Raté !') + '</p><p class="text-white/60 mt-1">' + (s.result.lost ? 'Morceau introuvable — personne ne marque, on enchaîne' : s.result.none ? 'On passe au titre suivant' : goodForMe ? 'Bien joué 🔥' : esc(s.buzzer ? s.buzzer.name : '')) + '</p>' + dingoTxt + revealCard(s.reveal) + bonusBanner(s) + '</div>';
       } else if (s.phase === 'ended') {
         center = [
           '<div class="w-full text-center animate-slidein">',

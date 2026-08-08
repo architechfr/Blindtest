@@ -303,7 +303,24 @@ Record dans `bt.soloBest`, réglages dans `bt.soloPls` / `bt.soloAns` / `bt.solo
    recherche partant de l'écran de réglages, on restait plusieurs secondes dessus
    après avoir cliqué « Commencer », comme si le bouton était mort. **L'attente
    passe en premier.**
-23. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
+23. **À l'aveugle, l'app est le SEUL juge — sans morceau de référence, la table se
+   bloque.** Rencontré en soirée en mode Dingo à deux : l'app n'avait plus le morceau
+   (recherche échouée / téléphone de l'hôte rechargé), elle est retombée sur le vote…
+   que personne ne pouvait trancher (le joueur ne valide pas sa propre réponse, l'autre
+   ne connaissait pas le titre). Trois verrous posés :
+   · **prévention** — `launchRound` n'ouvre pas le buzz d'une partie à l'aveugle sans
+     morceau : il attend la recherche et se relance tout seul (`attenteMorceau`) ;
+   · **auto-réparation** — filtres qui ne correspondent à personne, ou recherche
+     bredouille : on abandonne les filtres et on retombe sur une playlist sûre. À
+     l'aveugle l'hôte n'a **aucun écran** pour les corriger lui-même ;
+   · **filet** — `manchePerdue()` : si malgré tout il n'y a pas de référence au moment
+     de juger, la manche est annulée (personne ne marque) au lieu d'être renvoyée à
+     des gens qui ne peuvent pas décider. Une manche blanche vaut mieux qu'une partie
+     à l'arrêt. Vaut aussi pour `closeRacing` (Turbo), qui notait sinon tout le monde
+     « faux ».
+   Corollaire : **ne jamais armer une attente sans issue.** Chaque chemin qui met
+   `attenteMorceau = true` doit avoir quelqu'un qui le remettra à `false`.
+24. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
    handicap Dingo devait être posé dans `validate()` (buzz), sur les votes **et**
    dans `applyTurbo()` — sinon un simple changement de mode l'annulait en silence.
    Même piège que l'asymétrie hôte/joueur : une règle écrite à un seul endroit ne

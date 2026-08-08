@@ -320,7 +320,13 @@ Record dans `bt.soloBest`, réglages dans `bt.soloPls` / `bt.soloAns` / `bt.solo
      « faux ».
    Corollaire : **ne jamais armer une attente sans issue.** Chaque chemin qui met
    `attenteMorceau = true` doit avoir quelqu'un qui le remettra à `false`.
-24. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
+24. **Corriger automatiquement ne dispense pas de MONTRER la réponse.** À l'aveugle,
+   on passait du buzz au verdict sans jamais afficher ce qui avait été écrit : on
+   voyait « Raté » sans savoir de quoi. Or lire la bêtise de l'adversaire est une
+   bonne moitié du plaisir en soirée. `reponseDite()` à la révélation (buzz) et le
+   texte de chacun dans le récapitulatif Turbo. Règle générale : **un écran de
+   verdict doit rappeler ce sur quoi il porte.**
+25. **Un modificateur de points doit couvrir TOUS les chemins de points.** Le
    handicap Dingo devait être posé dans `validate()` (buzz), sur les votes **et**
    dans `applyTurbo()` — sinon un simple changement de mode l'annulait en silence.
    Même piège que l'asymétrie hôte/joueur : une règle écrite à un seul endroit ne
